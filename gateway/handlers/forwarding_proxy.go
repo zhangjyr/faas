@@ -128,12 +128,19 @@ func (p PrometheusFunctionNotifier) Notify(method string, URL string, statusCode
 }
 
 func getServiceName(urlValue string) string {
-	var serviceName string
+	serviceName := urlValue
+
 	forward := "/function/"
-	if strings.HasPrefix(urlValue, forward) {
-		serviceName = urlValue[len(forward):]
+	if strings.HasPrefix(serviceName, forward) {
+		serviceName = strings.TrimPrefix(serviceName, forward)
 	}
-	return strings.Trim(serviceName, "/")
+
+	slashIndex := strings.Index(serviceName, "/")
+	if slashIndex > -1 {
+		return serviceName[:slashIndex]
+	}
+
+	return serviceName
 }
 
 // LoggingNotifier notifies a log about a request
