@@ -135,6 +135,7 @@ func main() {
 	// r.StrictSlash(false)	// This didn't work, so register routes twice.
 	r.HandleFunc("/function/{name:[-a-zA-Z_0-9]+}", functionProxy)
 	r.HandleFunc("/function/{name:[-a-zA-Z_0-9]+}/", functionProxy)
+	r.HandleFunc("/function/{name:[-a-zA-Z_0-9]+}/{params:.*}", handlers.MakeURIPrefixStripper(functionProxy, "/function"))
 
 	r.HandleFunc("/system/info", handlers.MakeInfoHandler(handlers.MakeForwardingProxyHandler(
 		reverseProxy, forwardingNotifiers, urlResolver))).Methods(http.MethodGet)
