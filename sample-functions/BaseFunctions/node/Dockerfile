@@ -9,10 +9,10 @@ COPY package.json .
 
 RUN npm i
 COPY handler.js .
+COPY nsenter .
 
-ENV fprocess="node handler.js"
+ENV fprocess="./nsenter -t 1 -m node /root/handler.js"
 
 HEALTHCHECK --interval=1s CMD [ -e /tmp/.lock ] || exit 1
 
 CMD ["fwatchdog"]
-
