@@ -1,0 +1,102 @@
+# Please edit the object below. Lines beginning with a '#' will be ignored,
+# and an empty file will abort the edit. If an error occurs while saving this file will be
+# reopened with the relevant failures.
+#
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    prometheus.io.scrape: "false"
+  creationTimestamp: 2018-11-25T04:08:43Z
+  generation: 1
+  labels:
+    faas_function: helloworld
+  name: helloworld
+  namespace: openfaas-fn
+  resourceVersion: "277054"
+  selfLink: /apis/extensions/v1beta1/namespaces/openfaas-fn/deployments/helloworld
+  uid: cc13229b-f067-11e8-b26a-12c33b5b3818
+spec:
+  progressDeadlineSeconds: 2147483647
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      faas_function: helloworld
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        prometheus.io.scrape: "false"
+      creationTimestamp: null
+      labels:
+        faas_function: helloworld
+      name: helloworld
+    spec:
+      shareProcessNamespace: true
+      initContainers:
+      - name: standby
+        image: zhangjyr/standby:0.1
+        imagePullPolicy: Always
+      containers:
+      - image: zhangjyr/faas-helloworld:function
+        imagePullPolicy: Always
+        livenessProbe:
+          exec:
+            command:
+            - cat
+            - /tmp/.lock
+          failureThreshold: 3
+          initialDelaySeconds: 3
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: scheduler
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        readinessProbe:
+          exec:
+          command:
+          - cat
+          - /tmp/.lock
+          failureThreshold: 3
+          periodSeconds: 1
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        securityContext:
+          readOnlyRootFilesystem: false
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      - image: zhangjyr/chelloworld:0.1
+        imagePullPolicy: Always
+        name: helloworld
+        resources: {}
+        securityContext:
+          readOnlyRootFilesystem: false
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: 2018-11-25T04:08:44Z
+    lastUpdateTime: 2018-11-25T04:08:44Z
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1

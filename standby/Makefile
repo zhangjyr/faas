@@ -12,7 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM scratch
-ARG ARCH
-ADD bin/pause-${ARCH} /pause
-ENTRYPOINT ["/pause"]
+REGISTRY ?= zhangjyr
+IMAGE = $(REGISTRY)/standby
+
+TAG = 0.2
+# REV = $(shell git describe --contains --always --match='v*')
+
+CFLAGS = -Os -Wall -Werror -static # -DVERSION=v$(TAG)-$(REV)
+
+BIN = standby
+SRCS = standby.c
+
+all: container push
+
+$(BIN): $(SRCS)
+	mkdir -p bin
+	gcc $(CFLAGS) -o bin/$@ $^
+
+container:
+	docker build --pull -t $(IMAGE):$(TAG) .
+#	touch $@
+
+push:
+	docker push $(IMAGE):$(TAG)
+#	touch $@
+
+clean:
+	rm -rf bin/
