@@ -91,6 +91,9 @@ func (ReadConfig) Read(hasEnv HasEnv) WatchdogConfig {
 		cfg.combineOutput = parseBoolValue(hasEnv.Getenv("combine_output"))
 	}
 
+	// Add by Tianium
+	cfg.profile = hasEnv.Getenv("profile")
+
 	return cfg
 }
 
@@ -132,4 +135,7 @@ type WatchdogConfig struct {
 
 	// combineOutput combines stderr and stdout in response
 	combineOutput bool
+
+	// Add by Tianium: path of profile
+	profile string
 }

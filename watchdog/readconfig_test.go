@@ -243,3 +243,23 @@ func TestRead_ExecTimeoutConfig(t *testing.T) {
 		t.Fail()
 	}
 }
+
+// Add by Tianium
+func TestRead_ProfileConfig(t *testing.T) {
+	defaults := NewEnvBucket()
+	readConfig := ReadConfig{}
+
+	config := readConfig.Read(defaults)
+	if config.profile != "" {
+		t.Logf("fprocess default envVariable incorrect, got: \"%s\".\n", config.profile)
+		t.Fail()
+	}
+
+	defaults.Setenv("profile", "/profile.log")
+	config = readConfig.Read(defaults)
+
+	if config.profile != "/profile.log" {
+		t.Logf("fprocess envVariable incorrect, got: \"%s\".\n", config.profile)
+		t.Fail()
+	}
+}

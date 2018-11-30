@@ -15,7 +15,7 @@
 REGISTRY ?= zhangjyr
 IMAGE = $(REGISTRY)/standby
 
-TAG = 0.2
+TAG = b3
 # REV = $(shell git describe --contains --always --match='v*')
 
 CFLAGS = -Os -Wall -Werror -static # -DVERSION=v$(TAG)-$(REV)

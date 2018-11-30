@@ -25,6 +25,8 @@ import (
 var (
 	versionFlag          bool
 	acceptingConnections int32
+	// Add by Tianium
+	profile              string
 )
 
 func main() {
@@ -63,6 +65,8 @@ func main() {
 	http.HandleFunc("/", makeRequestHandler(&config))
 
 	shutdownTimeout := config.writeTimeout
+	// Add by Tianium
+	profile = config.profile
 
 	listenUntilShutdown(shutdownTimeout, s, config.suppressLock)
 }
@@ -113,6 +117,9 @@ func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, suppress
 
 	// Run the HTTP server in a separate go-routine.
 	go func() {
+		// Add by Tianium
+		profiler("serve")
+
 		if err := s.ListenAndServe(); err != http.ErrServerClosed {
 			log.Printf("Error ListenAndServe: %v", err)
 			close(idleConnsClosed)
@@ -141,4 +148,24 @@ func printVersion() {
 	}
 
 	log.Printf("Version: %v\tSHA: %v\n", BuildVersion(), sha)
+}
+
+// Add by Tianium
+func profiler(action string) {
+	if len(profile) == 0 {
+		return
+	}
+
+	file, openErr := os.OpenFile(profile, os.O_APPEND|os.O_WRONLY, 0660)
+	if openErr != nil {
+		log.Printf("Warning: failed to open profile. Error: %s.\n", openErr.Error())
+	}
+
+	defer file.Close()
+
+	now := time.Now()
+	_, writeErr := file.WriteString(fmt.Sprintf("%s,%s,%d.%d\n", "scheduler", action, now.Unix(), now.Nanosecond()))
+	if writeErr != nil {
+		log.Printf("Warning: failed to profile action \"%s\". Error: %s.\n", action, writeErr)
+	}
 }
