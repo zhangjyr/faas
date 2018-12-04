@@ -62,6 +62,7 @@ func main() {
 
 	log.Printf("Read/write timeout: %s, %s. Port: %d\n", readTimeout, writeTimeout, config.port)
 	http.HandleFunc("/_/health", makeHealthHandler())
+	http.HandleFunc("/_/ready", makeReadyHandler(&config))
 	http.HandleFunc("/", makeRequestHandler(&config))
 
 	shutdownTimeout := config.writeTimeout
@@ -69,6 +70,14 @@ func main() {
 	profile = config.profile
 
 	listenUntilShutdown(shutdownTimeout, s, config.suppressLock)
+
+	// Scan PIDs for functions in faasRegistry.
+	for faas, proc := range config.faasRegistry {
+		// Avoid duplicate read.
+		if proc.pid == 0 {
+			registerFaasProcess(&config, proc, faas)
+		}
+	}
 }
 
 func markUnhealthy() error {

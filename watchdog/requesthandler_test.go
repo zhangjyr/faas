@@ -40,6 +40,7 @@ func TestHandler_HasCustomHeaderInFunction_WithCgi_Mode(t *testing.T) {
 	config := WatchdogConfig{
 		faasProcess: "env",
 		cgiHeaders:  true,
+		schedulerMode: false,
 	}
 	handler := makeRequestHandler(&config)
 	handler(rr, req)
@@ -79,6 +80,7 @@ func TestHandler_HasCustomHeaderInFunction_WithCgiMode_AndBody(t *testing.T) {
 	config := WatchdogConfig{
 		faasProcess: "env",
 		cgiHeaders:  true,
+		schedulerMode: false,
 	}
 	handler := makeRequestHandler(&config)
 	handler(rr, req)
@@ -117,6 +119,7 @@ func TestHandler_HasHostHeaderWhenSet(t *testing.T) {
 	config := WatchdogConfig{
 		faasProcess: "env",
 		cgiHeaders:  true,
+		schedulerMode: false,
 	}
 	handler := makeRequestHandler(&config)
 	handler(rr, req)
@@ -147,6 +150,7 @@ func TestHandler_HostHeader_Empty_WhenNotSet(t *testing.T) {
 	config := WatchdogConfig{
 		faasProcess: "env",
 		cgiHeaders:  true,
+		schedulerMode: false,
 	}
 	handler := makeRequestHandler(&config)
 	handler(rr, req)
@@ -181,6 +185,7 @@ func TestHandler_StderrWritesToStderr_CombinedOutput_False(t *testing.T) {
 		faasProcess:   "stat x",
 		cgiHeaders:    true,
 		combineOutput: false,
+		schedulerMode: false,
 	}
 
 	handler := makeRequestHandler(&config)
@@ -222,6 +227,7 @@ func TestHandler_StderrWritesToResponse_CombinedOutput_True(t *testing.T) {
 		faasProcess:   "stat x",
 		cgiHeaders:    true,
 		combineOutput: true,
+		schedulerMode: false,
 	}
 
 	handler := makeRequestHandler(&config)
@@ -270,6 +276,7 @@ func TestHandler_DoesntHaveCustomHeaderInFunction_WithoutCgi_Mode(t *testing.T) 
 	config := WatchdogConfig{
 		faasProcess: "env",
 		cgiHeaders:  false,
+		schedulerMode: false,
 	}
 	handler := makeRequestHandler(&config)
 	handler(rr, req)
@@ -304,6 +311,7 @@ func TestHandler_HasXDurationSecondsHeader(t *testing.T) {
 
 	config := WatchdogConfig{
 		faasProcess: "cat",
+		schedulerMode: false,
 	}
 	handler := makeRequestHandler(&config)
 	handler(rr, req)
@@ -335,6 +343,7 @@ func TestHandler_RequestTimeoutFailsForExceededDuration(t *testing.T) {
 		config := WatchdogConfig{
 			faasProcess: "sleep 2",
 			execTimeout: time.Duration(100) * time.Millisecond,
+			schedulerMode: false,
 		}
 
 		handler := makeRequestHandler(&config)
@@ -362,6 +371,7 @@ func TestHandler_StatusOKAllowed_ForWriteableVerbs(t *testing.T) {
 
 		config := WatchdogConfig{
 			faasProcess: "cat",
+			schedulerMode: false,
 		}
 		handler := makeRequestHandler(&config)
 		handler(rr, req)
@@ -410,6 +420,7 @@ func TestHandler_StatusOKForGETAndNoBody(t *testing.T) {
 	config := WatchdogConfig{
 		// writeDebug:  true,
 		faasProcess: "date",
+		schedulerMode: false,
 	}
 
 	handler := makeRequestHandler(&config)
@@ -506,6 +517,7 @@ func TestHandler_HasFullPathAndQueryInFunction_WithCgi_Mode(t *testing.T) {
 	config := WatchdogConfig{
 		faasProcess: "env",
 		cgiHeaders:  true,
+		schedulerMode: false,
 	}
 	handler := makeRequestHandler(&config)
 	handler(rr, req)
@@ -532,4 +544,150 @@ func removeLockFile() error {
 	log.Printf("Removing lock-file : %s\n", path)
 	removeErr := os.Remove(path)
 	return removeErr
+}
+
+func TestHandler_ScheduleWithXFunctionHeader(t *testing.T) {
+	rr := httptest.NewRecorder()
+
+	body := "hello"
+	req, err := http.NewRequest(http.MethodPost, "/", bytes.NewBufferString(body))
+	req.Header.Add("X-Function", "helloworld")
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config := WatchdogConfig{
+		faasProcess: "nsenter -t %d %s",
+		schedulerMode: true,
+		faasRegistry: map[string]*FaasProcess{
+			"helloworld": &FaasProcess{
+				pid: 1,
+				faasProcess: "cat",
+			},
+		},
+	}
+	handler := makeRequestHandler(&config)
+	handler(rr, req)
+
+	required := http.StatusOK
+	if status := rr.Code; status != required {
+		t.Errorf("handler returned wrong status code - got: %v, want: %v",
+			status, required)
+	}
+
+	buf, _ := ioutil.ReadAll(rr.Body)
+	val := string(buf)
+	if val != body {
+		t.Errorf("Exec of helloworld was not successful, return: \"%s\"", val)
+	}
+}
+
+func TestHandler_ScheduleWithPath_WithHost(t *testing.T) {
+	rr := httptest.NewRecorder()
+
+	body := "hello"
+	req, err := http.NewRequest(http.MethodPost, "http://gateway/helloworld", bytes.NewBufferString(body))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config := WatchdogConfig{
+		faasProcess: "nsenter -t %d %s",
+		schedulerMode: true,
+		faasRegistry: map[string]*FaasProcess{
+			"helloworld": &FaasProcess{
+				pid: 1,
+				faasProcess: "cat",
+			},
+		},
+	}
+	handler := makeRequestHandler(&config)
+	handler(rr, req)
+
+	required := http.StatusOK
+	if status := rr.Code; status != required {
+		t.Errorf("handler returned wrong status code - got: %v, want: %v",
+			status, required)
+	}
+
+	buf, _ := ioutil.ReadAll(rr.Body)
+	val := string(buf)
+	if val != body {
+		t.Errorf("Exec of helloworld was not successful, return: \"%s\"", val)
+	}
+}
+
+func TestHandler_ScheduleWithPath_WithoutHost(t *testing.T) {
+	rr := httptest.NewRecorder()
+
+	body := "hello"
+	req, err := http.NewRequest(http.MethodPost, "/helloworld", bytes.NewBufferString(body))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config := WatchdogConfig{
+		faasProcess: "nsenter -t %d %s",
+		schedulerMode: true,
+		faasRegistry: map[string]*FaasProcess{
+			"helloworld": &FaasProcess{
+				pid: 1,
+				faasProcess: "cat",
+			},
+		},
+	}
+	handler := makeRequestHandler(&config)
+	handler(rr, req)
+
+	required := http.StatusOK
+	if status := rr.Code; status != required {
+		t.Errorf("handler returned wrong status code - got: %v, want: %v",
+			status, required)
+	}
+
+	buf, _ := ioutil.ReadAll(rr.Body)
+	val := string(buf)
+	if val != body {
+		t.Errorf("Exec of helloworld was not successful, return: \"%s\"", val)
+	}
+}
+
+func TestHandler_ScheduleAnyAvailable(t *testing.T) {
+	rr := httptest.NewRecorder()
+
+	body := "hello"
+	req, err := http.NewRequest(http.MethodPost, "/", bytes.NewBufferString(body))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config := WatchdogConfig{
+		faasProcess: "nsenter -t %d %s",
+		schedulerMode: true,
+		faasRegistry: map[string]*FaasProcess{
+			"helloworld": &FaasProcess{
+				pid: 1,
+				faasProcess: "cat",
+			},
+		},
+	}
+	setAvailable("helloworld")
+	handler := makeRequestHandler(&config)
+	handler(rr, req)
+
+	required := http.StatusOK
+	if status := rr.Code; status != required {
+		t.Errorf("handler returned wrong status code - got: %v, want: %v",
+			status, required)
+	}
+
+	buf, _ := ioutil.ReadAll(rr.Body)
+	val := string(buf)
+	if val != body {
+		t.Errorf("Exec of helloworld was not successful, return: \"%s\"", val)
+	}
 }

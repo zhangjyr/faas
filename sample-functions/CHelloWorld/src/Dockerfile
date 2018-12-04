@@ -13,3 +13,5 @@ RUN gcc main.c -static -o /main \
 FROM zhangjyr/sleep:0.2
 
 COPY --from=builder /main               /
+
+ENV fprocess="/main"

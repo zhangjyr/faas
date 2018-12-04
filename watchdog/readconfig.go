@@ -4,6 +4,7 @@
 package main
 
 import (
+	"strings"
 	"strconv"
 	"time"
 )
@@ -60,9 +61,14 @@ func (ReadConfig) Read(hasEnv HasEnv) WatchdogConfig {
 		writeDebug:    false,
 		cgiHeaders:    true,
 		combineOutput: true,
+		schedulerMode: true,
 	}
 
-	cfg.faasProcess = hasEnv.Getenv("fprocess")
+	cfg.faasProcess = hasEnv.Getenv("fpattern")
+	if len(cfg.faasProcess) == 0 {
+		cfg.faasProcess = hasEnv.Getenv("fprocess")
+		cfg.schedulerMode = false
+	}
 
 	cfg.readTimeout = parseIntOrDurationValue(hasEnv.Getenv("read_timeout"), time.Second*5)
 	cfg.writeTimeout = parseIntOrDurationValue(hasEnv.Getenv("write_timeout"), time.Second*5)
@@ -93,6 +99,16 @@ func (ReadConfig) Read(hasEnv HasEnv) WatchdogConfig {
 
 	// Add by Tianium
 	cfg.profile = hasEnv.Getenv("profile")
+
+	faasRegistry := hasEnv.Getenv("faas_registry")
+	// Ensure no map will be created in non scheduler mode.
+	if len(faasRegistry) > 0 {
+		allFaas := strings.Split(faasRegistry, ",")
+		cfg.faasRegistry = make(map[string]*FaasProcess, len(allFaas))
+		for _, faas := range allFaas {
+			cfg.faasRegistry[faas] = new(FaasProcess)
+		}
+	}
 
 	return cfg
 }
@@ -138,4 +154,15 @@ type WatchdogConfig struct {
 
 	// Add by Tianium: path of profile
 	profile string
+
+	// Add by Tianium: multi-process scheduler mode
+	schedulerMode bool
+
+	// Add by Tianium: Function registry.
+	faasRegistry map[string]*FaasProcess
+}
+
+type FaasProcess struct {
+	pid	int
+	faasProcess string
 }

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"strconv"
 
 	"github.com/openfaas/faas/watchdog/types"
 )
@@ -23,6 +24,10 @@ import (
 type requestInfo struct {
 	headerWritten bool
 }
+
+var (
+	available	string
+)
 
 // buildFunctionInput for a GET method this is an empty byte array.
 func buildFunctionInput(config *WatchdogConfig, r *http.Request) ([]byte, error) {
@@ -61,8 +66,35 @@ func debugHeaders(source *http.Header, direction string) {
 
 func pipeRequest(config *WatchdogConfig, w http.ResponseWriter, r *http.Request, method string) {
 	startTime := time.Now()
+	faasProcess := config.faasProcess
 
-	parts := strings.Split(config.faasProcess, " ")
+	if config.schedulerMode {
+		// TODO: modify api gateway to add X-Function header
+		faas := r.Header.Get("X-Function")
+		if len(faas) == 0 {
+			faas = strings.TrimPrefix(r.URL.Path, "/")
+		}
+		// TODO: remove this if available is no longer needed
+		if len(faas) == 0 {
+			if len(available) == 0 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			faas = available
+		}
+		if proc, registered := config.faasRegistry[faas]; !registered {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		} else if proc.pid > 0 {
+			faasProcess = fmt.Sprintf(config.faasProcess, proc.pid, proc.faasProcess)
+		} else {
+			// TODO: Add timeoutable queue
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+	}
+
+	parts := strings.Split(faasProcess, " ")
 
 	ri := &requestInfo{}
 
@@ -308,7 +340,77 @@ func makeRequestHandler(config *WatchdogConfig) func(http.ResponseWriter, *http.
 			break
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
-
 		}
+	}
+}
+
+func makeReadyHandler(config *WatchdogConfig) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case
+			http.MethodPost,
+			http.MethodPut,
+			http.MethodPatch,
+			http.MethodDelete,
+			http.MethodGet:
+
+			faas := r.Header.Get("X-Function")
+			if len(faas) > 0 {
+				registerFaas(config, faas)
+			}
+			w.WriteHeader(http.StatusOK)
+
+			break
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+// Add by Tianium
+func readFaas(faas string) (int, string) {
+	path := filepath.Join("/proc/1/root/var/run/", fmt.Sprintf("%s.pid", faas))
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return 0, ""
+	}
+
+	data, readErr := ioutil.ReadFile(path)
+	if readErr != nil {
+		log.Printf("Warning: failed to open pid of \"%s\". Error: %s.\n", faas, readErr.Error())
+		return 0, ""
+	}
+
+	return parsePID(string(data), faas)
+}
+
+func parsePID(data string, faas string) (int, string) {
+	parsed := strings.Split(data, "\n")
+	pid, parseErr := strconv.Atoi(parsed[0])
+	if parseErr != nil {
+		log.Printf("Warning: failed to parse pid of \"%s\". PID: \"%s\", Error: %s.\n", faas, parsed[0], parseErr.Error())
+		return 0, ""
+	}
+	if len(parsed) < 2 {
+		log.Printf("Warning: missing fProcess of \"%s\".\n", faas)
+		return 0, ""
+	}
+
+	return pid, parsed[1]
+}
+
+func setAvailable(faas string) {
+	available = faas
+}
+
+func registerFaasProcess(config *WatchdogConfig, proc *FaasProcess, faas string) {
+	proc.pid, proc.faasProcess = readFaas(faas)
+	if proc.pid > 0 {
+		setAvailable(faas)
+	}
+}
+
+func registerFaas(config *WatchdogConfig, faas string) {
+	if proc, registered := config.faasRegistry[faas]; registered {
+		registerFaasProcess(config, proc, faas)
 	}
 }

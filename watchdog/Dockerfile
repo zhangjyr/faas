@@ -41,7 +41,7 @@ RUN mkdir -p /tmp
 COPY --from=build /go/src/github.com/openfaas/faas/watchdog/watchdog  /fwatchdog
 COPY nsenter /
 
-ENV fprocess="/nsenter -t %d -m %s"
+ENV fpattern="/nsenter -t %d -m %s"
 
 HEALTHCHECK --interval=5s CMD [ -e /tmp/.lock ] || exit 1
 
