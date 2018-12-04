@@ -10,7 +10,7 @@ RUN gcc main.c -static -o /main \
  && chmod +x /main \
  && /main
 
-FROM zhangjyr/sleep:0.2
+FROM zhangjyr/sleep:b3
 
 COPY --from=builder /main               /
 

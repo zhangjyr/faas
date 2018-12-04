@@ -1,7 +1,7 @@
 REGISTRY ?= zhangjyr
 IMAGE = $(REGISTRY)/chelloworld
 
-TAG = b3
+TAG = b5
 
 CFLAGS = -Os -Wall -Werror -static # -DVERSION=v$(TAG)-$(REV)
 

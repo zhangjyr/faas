@@ -369,7 +369,7 @@ func makeReadyHandler(config *WatchdogConfig) func(http.ResponseWriter, *http.Re
 
 // Add by Tianium
 func readFaas(faas string) (int, string) {
-	path := filepath.Join("/proc/1/root/var/run/", fmt.Sprintf("%s.pid", faas))
+	path := fmt.Sprintf("/proc/1/root/%s.pid", faas)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return 0, ""
 	}
@@ -405,6 +405,7 @@ func setAvailable(faas string) {
 func registerFaasProcess(config *WatchdogConfig, proc *FaasProcess, faas string) {
 	proc.pid, proc.faasProcess = readFaas(faas)
 	if proc.pid > 0 {
+		log.Printf("Function \"%s\" registered: (PID %s, fprocess \"%s\").\n", faas, proc.pid, proc.faasProcess)
 		setAvailable(faas)
 	}
 }
