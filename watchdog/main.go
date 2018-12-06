@@ -25,8 +25,6 @@ import (
 var (
 	versionFlag          bool
 	acceptingConnections int32
-	// Add by Tianium
-	profile              string
 )
 
 func main() {
@@ -62,22 +60,12 @@ func main() {
 
 	log.Printf("Read/write timeout: %s, %s. Port: %d\n", readTimeout, writeTimeout, config.port)
 	http.HandleFunc("/_/health", makeHealthHandler())
-	http.HandleFunc("/_/ready", makeReadyHandler(&config))
+	http.HandleFunc("/_/ready/", makeReadyHandler(&config))
 	http.HandleFunc("/", makeRequestHandler(&config))
 
 	shutdownTimeout := config.writeTimeout
-	// Add by Tianium
-	profile = config.profile
 
-	listenUntilShutdown(shutdownTimeout, s, config.suppressLock)
-
-	// Scan PIDs for functions in faasRegistry.
-	for faas, proc := range config.faasRegistry {
-		// Avoid duplicate read.
-		if proc.pid == 0 {
-			registerFaasProcess(&config, proc, faas)
-		}
-	}
+	listenUntilShutdown(shutdownTimeout, s, &config)
 }
 
 func markUnhealthy() error {
@@ -93,7 +81,7 @@ func markUnhealthy() error {
 // is sent at which point the code will wait `shutdownTimeout` before
 // closing off connections and a futher `shutdownTimeout` before
 // exiting
-func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, suppressLock bool) {
+func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, config* WatchdogConfig) {
 
 	idleConnsClosed := make(chan struct{})
 	go func() {
@@ -127,7 +115,7 @@ func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, suppress
 	// Run the HTTP server in a separate go-routine.
 	go func() {
 		// Add by Tianium
-		profiler("serve")
+		profiler("serve", config)
 
 		if err := s.ListenAndServe(); err != http.ErrServerClosed {
 			log.Printf("Error ListenAndServe: %v", err)
@@ -135,7 +123,7 @@ func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, suppress
 		}
 	}()
 
-	if suppressLock == false {
+	if config.suppressLock == false {
 		path, writeErr := createLockFile()
 
 		if writeErr != nil {
@@ -145,6 +133,14 @@ func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, suppress
 		log.Println("Warning: \"suppress_lock\" is enabled. No automated health-checks will be in place for your function.")
 
 		atomic.StoreInt32(&acceptingConnections, 1)
+	}
+
+	// Scan PIDs for functions in faasRegistry.
+	for faas, proc := range config.faasRegistry {
+		// Avoid duplicate read.
+		if proc.pid == 0 {
+			registerFaasProcess(config, proc, faas)
+		}
 	}
 
 	<-idleConnsClosed
@@ -160,12 +156,12 @@ func printVersion() {
 }
 
 // Add by Tianium
-func profiler(action string) {
-	if len(profile) == 0 {
+func profiler(action string, config *WatchdogConfig) {
+	if len(config.profile) == 0 {
 		return
 	}
 
-	file, openErr := os.OpenFile(profile, os.O_APPEND|os.O_WRONLY, 0660)
+	file, openErr := os.OpenFile(config.profile, os.O_APPEND|os.O_WRONLY, 0660)
 	if openErr != nil {
 		log.Printf("Warning: failed to open profile. Error: %s.\n", openErr.Error())
 	}

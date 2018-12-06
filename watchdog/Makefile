@@ -1,7 +1,7 @@
 REGISTRY ?= zhangjyr
 IMAGE = $(REGISTRY)/openfaas-watchdog
 
-TAG = b4
+TAG = b5
 
 all: container push
 

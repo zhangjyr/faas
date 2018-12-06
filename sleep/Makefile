@@ -1,7 +1,7 @@
 REGISTRY ?= zhangjyr
 IMAGE = $(REGISTRY)/sleep
 
-TAG = b3
+TAG = b5
 
 CFLAGS = -Os -Wall -Werror -static
 
@@ -15,7 +15,7 @@ $(BIN): $(SRCS)
 	gcc $(CFLAGS) -o bin/$@ $^
 
 container:
-	docker build --pull -t $(IMAGE):$(TAG) .
+	docker build -t $(IMAGE):$(TAG) .
 
 push:
 	docker push $(IMAGE):$(TAG)

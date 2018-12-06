@@ -26,10 +26,10 @@
 
 #define PORT 8080
 
-#define ERROR_PID 3;
-#define ERROR_MEMORY 4;
-#define ERROR_SOCKET 11;
-#define REQUEST_MESSAGE ("GET /%s HTTP/1.0\r\n\r\n")
+#define ERROR_PID 3
+#define ERROR_MEMORY 4
+#define ERROR_SOCKET 11
+#define REQUEST_MESSAGE ("GET /_/ready/%s HTTP/1.0\r\n\r\n")
 
 static int _profile(int profile) {
     static int optProfile = PROPERTY_SET_NO_PROFILE;
@@ -81,7 +81,6 @@ int main(int argc, char **argv) {
             sprintf(message, REQUEST_MESSAGE, faas);
 
             FILE *pidFile = fopen(pid, "w");
-            printf("%s", pid);
             if (pidFile == NULL) {
                 errcode = ERROR_PID;
             }
@@ -133,7 +132,16 @@ int request(char *message)
     /* connect the socket, ignore if unable to connect */
     if (connect(sockfd, (struct sockaddr *)&dest, sizeof(dest)) < 0) {
         close(sockfd);
+        if (_profile(PROPERTY_GET_PROFILE)) {
+            fprintf(stdout, "Failed to connect to registry, abandon.\n");
+            fflush(stdout);
+        }
         return 0;
+    }
+
+    if (_profile(PROPERTY_GET_PROFILE)) {
+        fprintf(stdout, "Socket is connected, sending message...\n");
+        fflush(stdout);
     }
 
     /* send the request */
@@ -144,9 +152,31 @@ int request(char *message)
         return ERROR_SOCKET;
     }
 
+    if (_profile(PROPERTY_GET_PROFILE)) {
+        fprintf(stdout, "Message is successfully sent to socket, closing socket...\n");
+        // fprintf(stdout, "Message is successfully sent to socket, waiting for response...\n");
+        fflush(stdout);
+    }
+
+    /* receive the response */
+    // bytes = read(sockfd, message, total);
+    // if (bytes < 0) {
+    //     fprintf(stderr, "ERROR reading response from socket.\n");
+    //     fflush(stdout);
+    // }
+    // else if (_profile(PROPERTY_GET_PROFILE)) {
+    //     fprintf(stdout, "Received response: %s, closing socket...\n", message);
+    //     fflush(stdout);
+    // }
+
     /* close the socket with wait for response */
     shutdown (sockfd, 0); /* Stop receiving data for this socket. If further data arrives, reject it. */
     close(sockfd);
+
+    if (_profile(PROPERTY_GET_PROFILE)) {
+        fprintf(stdout, "Socket is closed.\n");
+        fflush(stdout);
+    }
 
     return 0;
 }

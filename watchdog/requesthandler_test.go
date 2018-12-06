@@ -691,3 +691,46 @@ func TestHandler_ScheduleAnyAvailable(t *testing.T) {
 		t.Errorf("Exec of helloworld was not successful, return: \"%s\"", val)
 	}
 }
+
+func TestHandler_ReadyWithXFunctionHeader(t *testing.T) {
+	rr := httptest.NewRecorder()
+
+	req, err := http.NewRequest(http.MethodGet, "/_/ready", nil)
+	req.Header.Add("X-Function", "helloworld")
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config := WatchdogConfig{
+	}
+	handler := makeRequestHandler(&config)
+	handler(rr, req)
+
+	required := http.StatusInternalServerError
+	if status := rr.Code; status != required {
+		t.Errorf("handler returned wrong status code - got: %v, want: %v",
+			status, required)
+	}
+}
+
+func TestHandler_ReadyWithPath_WithoutHost(t *testing.T) {
+	rr := httptest.NewRecorder()
+
+	req, err := http.NewRequest(http.MethodGet, "/_/ready/helloworld", nil)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config := WatchdogConfig{
+	}
+	handler := makeRequestHandler(&config)
+	handler(rr, req)
+
+	required := http.StatusInternalServerError
+	if status := rr.Code; status != required {
+		t.Errorf("handler returned wrong status code - got: %v, want: %v",
+			status, required)
+	}
+}

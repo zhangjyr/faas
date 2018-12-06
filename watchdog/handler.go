@@ -102,7 +102,11 @@ func pipeRequest(config *WatchdogConfig, w http.ResponseWriter, r *http.Request,
 		debugHeaders(&r.Header, "in")
 	}
 
-	log.Println("Forking fprocess.")
+	if config.writeDebug {
+		log.Printf("Forking fprocess: \"%s\"\n", faasProcess)
+	} else {
+		log.Println("Forking fprocess.")
+	}
 
 	targetCmd := exec.Command(parts[0], parts[1:]...)
 
@@ -355,10 +359,16 @@ func makeReadyHandler(config *WatchdogConfig) func(http.ResponseWriter, *http.Re
 			http.MethodGet:
 
 			faas := r.Header.Get("X-Function")
-			if len(faas) > 0 {
-				registerFaas(config, faas)
+			if len(faas) == 0 {
+				faas = strings.TrimPrefix(r.URL.Path, "/_/ready/")
 			}
-			w.WriteHeader(http.StatusOK)
+			if len(faas) == 0 {
+				w.WriteHeader(http.StatusBadRequest)
+			} else if registerFaas(config, faas) <= 0 {
+				w.WriteHeader(http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
 
 			break
 		default:
@@ -368,9 +378,12 @@ func makeReadyHandler(config *WatchdogConfig) func(http.ResponseWriter, *http.Re
 }
 
 // Add by Tianium
-func readFaas(faas string) (int, string) {
+func readFaas(config *WatchdogConfig, faas string) (int, string) {
 	path := fmt.Sprintf("/proc/1/root/%s.pid", faas)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if config.writeDebug {
+			log.Printf("Pid not exist %s:%s\n", faas, path)
+		}
 		return 0, ""
 	}
 
@@ -402,16 +415,19 @@ func setAvailable(faas string) {
 	available = faas
 }
 
-func registerFaasProcess(config *WatchdogConfig, proc *FaasProcess, faas string) {
-	proc.pid, proc.faasProcess = readFaas(faas)
+func registerFaasProcess(config *WatchdogConfig, proc *FaasProcess, faas string) int {
+	proc.pid, proc.faasProcess = readFaas(config, faas)
 	if proc.pid > 0 {
-		log.Printf("Function \"%s\" registered: (PID %s, fprocess \"%s\").\n", faas, proc.pid, proc.faasProcess)
+		log.Printf("Function \"%s\" registered: (PID %d, fprocess \"%s\").\n", faas, proc.pid, proc.faasProcess)
 		setAvailable(faas)
 	}
+	return proc.pid
 }
 
-func registerFaas(config *WatchdogConfig, faas string) {
+func registerFaas(config *WatchdogConfig, faas string) int {
 	if proc, registered := config.faasRegistry[faas]; registered {
-		registerFaasProcess(config, proc, faas)
+		return registerFaasProcess(config, proc, faas)
 	}
+
+	return -1
 }
