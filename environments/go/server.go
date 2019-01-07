@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -146,6 +147,14 @@ func readinessProbeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	var port int
+	flag.IntVar(&port, "port", 0, "Specify the port to listen")
+	flag.Parse()
+
+	if port == 0 {
+		flag.CommandLine.Usage()
+	}
+
 	http.HandleFunc("/healthz", readinessProbeHandler)
 	http.HandleFunc("/specialize", specializeHandler)
 	http.HandleFunc("/v2/specialize", specializeHandlerV2)
@@ -160,6 +169,18 @@ func main() {
 		userFunc(w, r)
 	})
 
-	fmt.Println("Listening on 8888 ...")
-	http.ListenAndServe(":8888", nil)
+	fmt.Printf("Listening on %d ...\n", port)
+	serverStopped := make(chan struct{})
+	go func() {
+		if err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil); err != http.ErrServerClosed {
+			fmt.Printf("Error ListenAndServe: %v\n", err)
+			close(serverStopped)
+		}
+	}()
+
+	if _, err := http.Get(fmt.Sprintf("http://localhost:8079/_/ready/%d", port)); err != nil {
+		fmt.Printf("Error on register environment: %v\n", err)
+	}
+
+	<-serverStopped
 }

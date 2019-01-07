@@ -5,13 +5,15 @@ ARG GIT_COMMIT
 RUN mkdir -p /go/src/github.com/openfaas/faas/watchdog
 WORKDIR /go/src/github.com/openfaas/faas/watchdog
 
-COPY main.go            	.
-COPY handler.go			.
-COPY readconfig.go      	.
-COPY readconfig_test.go 	.
-COPY requesthandler_test.go 	.
-COPY types 			types
-COPY version.go 		.
+COPY main.go                .
+COPY handler.go             .
+COPY readconfig.go          .
+COPY readconfig_test.go     .
+COPY types                  types
+COPY proxy                  proxy
+COPY logger                 logger
+COPY vendor                 vendor
+COPY version.go             .
 
 # Run a gofmt and exclude all vendored code.
 # RUN test -z "$(gofmt -l $(find . -type f -name '*.go' -not -path "./vendor/*"))"
@@ -39,12 +41,10 @@ FROM alpine:3.7
 
 RUN mkdir -p /tmp
 COPY --from=build /go/src/github.com/openfaas/faas/watchdog/watchdog  /fwatchdog
-COPY nsenter /
-
-ENV fpattern="/nsenter -t %d -m %s"
 
 HEALTHCHECK --interval=5s CMD [ -e /tmp/.lock ] || exit 1
 
 CMD ["/fwatchdog"]
 
 EXPOSE 8080
+EXPOSE 8079

@@ -4,7 +4,6 @@
 package main
 
 import (
-	"strings"
 	"strconv"
 	"time"
 )
@@ -61,20 +60,17 @@ func (ReadConfig) Read(hasEnv HasEnv) WatchdogConfig {
 		writeDebug:    false,
 		cgiHeaders:    true,
 		combineOutput: true,
-		schedulerMode: true,
 	}
 
-	cfg.faasProcess = hasEnv.Getenv("fpattern")
-	if len(cfg.faasProcess) == 0 {
-		cfg.faasProcess = hasEnv.Getenv("fprocess")
-		cfg.schedulerMode = false
-	}
+	cfg.faasProcess = hasEnv.Getenv("fprocess")
+	cfg.instances = parseIntValue(hasEnv.Getenv("instances"), 2)
 
 	cfg.readTimeout = parseIntOrDurationValue(hasEnv.Getenv("read_timeout"), time.Second*5)
 	cfg.writeTimeout = parseIntOrDurationValue(hasEnv.Getenv("write_timeout"), time.Second*5)
 
 	cfg.execTimeout = parseIntOrDurationValue(hasEnv.Getenv("exec_timeout"), time.Second*0)
 	cfg.port = parseIntValue(hasEnv.Getenv("port"), 8080)
+	cfg.adminPort = parseIntValue(hasEnv.Getenv("port"), 8079)
 
 	writeDebugEnv := hasEnv.Getenv("write_debug")
 	if isBoolValueSet(writeDebugEnv) {
@@ -100,16 +96,6 @@ func (ReadConfig) Read(hasEnv HasEnv) WatchdogConfig {
 	// Add by Tianium
 	cfg.profile = hasEnv.Getenv("profile")
 
-	faasRegistry := hasEnv.Getenv("faas_registry")
-	// Ensure no map will be created in non scheduler mode.
-	if len(faasRegistry) > 0 {
-		allFaas := strings.Split(faasRegistry, ",")
-		cfg.faasRegistry = make(map[string]*FaasProcess, len(allFaas))
-		for _, faas := range allFaas {
-			cfg.faasRegistry[faas] = new(FaasProcess)
-		}
-	}
-
 	return cfg
 }
 
@@ -124,6 +110,9 @@ type WatchdogConfig struct {
 
 	// faasProcess is the process to exec
 	faasProcess string
+
+	// Add by Tianium: faas instances
+	instances int
 
 	// duration until the faasProcess will be killed
 	execTimeout time.Duration
@@ -149,20 +138,12 @@ type WatchdogConfig struct {
 	// port for HTTP server
 	port int
 
+	// port for management
+	adminPort int
+
 	// combineOutput combines stderr and stdout in response
 	combineOutput bool
 
 	// Add by Tianium: path of profile
 	profile string
-
-	// Add by Tianium: multi-process scheduler mode
-	schedulerMode bool
-
-	// Add by Tianium: Function registry.
-	faasRegistry map[string]*FaasProcess
-}
-
-type FaasProcess struct {
-	pid	int
-	faasProcess string
 }

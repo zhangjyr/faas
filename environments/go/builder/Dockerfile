@@ -1,5 +1,5 @@
 ARG BUILDER_IMAGE=fission/builder
-ARG GO_VERSION=1.9.2
+ARG GO_VERSION=1.9.7
 
 FROM ${BUILDER_IMAGE}
 
@@ -10,4 +10,3 @@ WORKDIR ${GOPATH}
 
 COPY --from=0 /builder /builder
 ADD build.sh /usr/local/bin/build
-

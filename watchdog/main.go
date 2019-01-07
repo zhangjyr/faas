@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/openfaas/faas/watchdog/types"
+	"github.com/openfaas/faas/watchdog/proxy"
 )
 
 var (
@@ -52,19 +53,30 @@ func main() {
 	writeTimeout := config.writeTimeout
 
 	s := &http.Server{
-		Addr:           fmt.Sprintf(":%d", config.port),
+		Addr:           fmt.Sprintf(":%d", config.adminPort),
 		ReadTimeout:    readTimeout,
 		WriteTimeout:   writeTimeout,
 		MaxHeaderBytes: 1 << 20, // Max header of 1MB
 	}
 
-	log.Printf("Read/write timeout: %s, %s. Port: %d\n", readTimeout, writeTimeout, config.port)
+	ics := &Scheduler{
+		Config:     &config,
+		Proxy:      &proxy.Server{
+			Addr:       fmt.Sprintf(":%d", config.port),
+			Verbose:    len(config.profile) > 0,
+			Debug:      len(config.profile) > 0,
+		},
+		Profiler:   getProfiler(&config),
+	}
+	defer ics.Proxy.Close()
+
+	log.Printf("Read/write timeout: %s, %s. Port: %d\n", readTimeout, writeTimeout, config.adminPort)
 	http.HandleFunc("/_/health", makeHealthHandler())
-	http.HandleFunc("/_/ready/", makeReadyHandler(&config))
-	http.HandleFunc("/", makeRequestHandler(&config))
+	http.HandleFunc("/_/ready/", makeReadyHandler(ics))
+
+	ics.LaunchFEs()
 
 	shutdownTimeout := config.writeTimeout
-
 	listenUntilShutdown(shutdownTimeout, s, &config)
 }
 
@@ -115,7 +127,7 @@ func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, config* 
 	// Run the HTTP server in a separate go-routine.
 	go func() {
 		// Add by Tianium
-		profiler("serve", config)
+		profiler("admin", config)
 
 		if err := s.ListenAndServe(); err != http.ErrServerClosed {
 			log.Printf("Error ListenAndServe: %v", err)
@@ -133,14 +145,6 @@ func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, config* 
 		log.Println("Warning: \"suppress_lock\" is enabled. No automated health-checks will be in place for your function.")
 
 		atomic.StoreInt32(&acceptingConnections, 1)
-	}
-
-	// Scan PIDs for functions in faasRegistry.
-	for faas, proc := range config.faasRegistry {
-		// Avoid duplicate read.
-		if proc.pid == 0 {
-			registerFaasProcess(config, proc, faas)
-		}
 	}
 
 	<-idleConnsClosed
@@ -161,7 +165,7 @@ func profiler(action string, config *WatchdogConfig) {
 		return
 	}
 
-	file, openErr := os.OpenFile(config.profile, os.O_APPEND|os.O_WRONLY, 0660)
+	file, openErr := os.OpenFile(config.profile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0660)
 	if openErr != nil {
 		log.Printf("Warning: failed to open profile. Error: %s.\n", openErr.Error())
 	}
@@ -174,3 +178,11 @@ func profiler(action string, config *WatchdogConfig) {
 		log.Printf("Warning: failed to profile action \"%s\". Error: %s.\n", action, writeErr)
 	}
 }
+
+func getProfiler(config *WatchdogConfig) ProfilerFunc {
+	return func(action string) {
+		profiler(action, config)
+	}
+}
+
+type ProfilerFunc func(string)

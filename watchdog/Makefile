@@ -1,7 +1,7 @@
 REGISTRY ?= zhangjyr
-IMAGE = $(REGISTRY)/openfaas-watchdog
+IMAGE = $(REGISTRY)/openfaas-ics
 
-TAG = b5
+TAG = b1
 
 all: container push
 
