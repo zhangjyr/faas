@@ -8,6 +8,8 @@ const app = express();
 const bodyParser = require('body-parser');
 const morgan = require('morgan');
 const argv = require('minimist')(process.argv.slice(1));// Command line opts
+const request = require('request');
+const util = require('util');
 
 if (!argv.port) {
     argv.port = 8888;
@@ -98,6 +100,9 @@ app.use(bodyParser.json());
 app.use(bodyParser.raw());
 app.use(bodyParser.text({ type : "text/*" }));
 
+app.get("/healthz", function (req, res) {
+    res.status(200).end();
+})
 app.post('/specialize', withEnsureGeneric(specialize));
 app.post('/v2/specialize', withEnsureGeneric(specializeV2));
 
@@ -151,5 +156,10 @@ app.all('/', function (req, res) {
     }
 
 });
+
+process.nextTick( () => {
+    request.get(util.format("http://localhost:8079/_/ready/%s", argv.port))
+        .on('error', (err) => console.log(err) );
+} );
 
 app.listen(argv.port);

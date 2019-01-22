@@ -4,7 +4,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -85,10 +87,24 @@ func makeReadyHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
+func makeSpecializeHandler(ics *Scheduler, ) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			upstreamReq, _ := http.NewRequest(r.Method, ics.faasEnvs[ics.serving], nil)
+
+			break
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}
+}
+
 // Add by Tianium
 type FaasEnvironment struct {
 	cmd         *exec.Cmd
 	address     string
+	endpoint    string
 }
 
 type Scheduler struct{
@@ -111,15 +127,30 @@ func (ics *Scheduler) LaunchFEs() {
 		parts := strings.Split(faasProcess, " ")
 
 		execCmd := exec.Command(parts[0], parts[1:]...)
-		err := execCmd.Start()
+		execStderr, err := execCmd.StderrPipe()
+		if err != nil {
+			log.Fatal(err)
+			continue
+		}
+		execStdout, err := execCmd.StdoutPipe()
+		if err != nil {
+			log.Fatal(err)
+			continue
+		}
+		err = execCmd.Start()
 		if err != nil {
 			log.Fatal(err)
 			continue
 		}
 
+		prefix := []byte(fmt.Sprintf("Environment %d: ", port))
+		go ics.pipeFE(prefix, execStderr, os.Stderr)
+		go ics.pipeFE(prefix, execStdout, os.Stdout)
+
 		ics.faasEnvs[port] = &FaasEnvironment{
 			cmd:     execCmd,
 			address: fmt.Sprintf(":%d", port),
+			endpoint: fmt.Sprintf("http://localhost:%d", port),
 		}
 	}
 }
@@ -132,6 +163,7 @@ func (ics *Scheduler) RegisterFE(strPort string) int {
 
 	fe, registered := ics.faasEnvs[port]
 	if !registered {
+		log.Printf("Error on proxy %d: unregistered.\n", port)
 		return -1
 	}
 
@@ -141,13 +173,52 @@ func (ics *Scheduler) RegisterFE(strPort string) int {
 		go func() {
 			err := ics.Proxy.ListenAndProxy(fe.address)
 			if err != nil {
-				log.Printf("Error on proxy %d: %v", port, err)
-			} else {
-				ics.serving = port
-				ics.Profiler("proxy")
+				log.Printf("Error on proxy %d: %v\n", port, err)
 			}
 		}()
+		ics.serving = port
+		ics.Profiler("proxy")
 	}
 
 	return fe.cmd.Process.Pid
+}
+
+func (ics *Scheduler) pipeFE(prefix []byte, src io.ReadClose, dst io.Writer) {
+	//directional copy (64k buffer)
+	buff := make([]byte, 0xffff)
+	for {
+		n, readErr := src.Read(buff)
+		if readErr != nil {
+			if readErr != io.EOF {
+				log.Fatal(readErr)
+				src.Close()
+				return
+			} else if n == 0 {
+				src.Close()
+				return
+			}
+
+			// Pass down to to transfer rest bytes
+		}
+		b := buff[:n]
+
+		//write out result
+		n, writeErr := dst.Write(append(prefix, b...))
+		if writeErr != nil {
+			log.Fatal(writeErr)
+		}
+
+		// EOF and we're done
+		if readErr != nil {
+			src.Close()
+			return
+		}
+	}
+}
+
+func (ics *Scheduler) specialize(port int, functionName string) {
+	url := ics.faasEnvs[port].endpoint + "/v2/specialize"
+	upstreamReq, _ := http.NewRequest(http.MethodPost, url, nil)
+	upstreamReq.Body = r.Body
+
 }

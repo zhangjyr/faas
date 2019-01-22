@@ -73,6 +73,7 @@ func main() {
 	log.Printf("Read/write timeout: %s, %s. Port: %d\n", readTimeout, writeTimeout, config.adminPort)
 	http.HandleFunc("/_/health", makeHealthHandler())
 	http.HandleFunc("/_/ready/", makeReadyHandler(ics))
+	http.HandleFunc("/_/specialize/", makeSpecializeHandler(ics))
 
 	ics.LaunchFEs()
 

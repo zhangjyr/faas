@@ -39,8 +39,10 @@ import (
 type forwardConnection struct {
 	sentBytes     uint64
 	receivedBytes uint64
-	laddr, raddr  *net.TCPAddr
-	lconn, rconn  io.ReadWriteCloser
+	laddr         *net.TCPAddr
+	raddrs        []*net.TCPAddr
+	lconn         io.ReadWriteCloser
+	rconns        []io.ReadWriteCloser
 	closed        chan bool
 	traceFormat   string
 	mu            sync.Mutex
@@ -57,11 +59,11 @@ type forwardConnection struct {
 
 // New - Create a new forwardConnection instance. Takes over local connection passed in,
 // and closes it when finished.
-func newForwardConnection(lconn *net.TCPConn, laddr, raddr *net.TCPAddr) *forwardConnection {
+func newForwardConnection(lconn *net.TCPConn, laddr, raddrs []*net.TCPAddr) *forwardConnection {
 	return &forwardConnection{
 		lconn:  lconn,
 		laddr:  laddr,
-		raddr:  raddr,
+		raddrs:  raddrs,
 		closed: make(chan bool),
 		Log:    &logger.NilLogger{},
 	}
@@ -74,27 +76,33 @@ type setNoDelayer interface {
 // Start - open connection to remote and start forwardConnectioning data.
 func (fconn *forwardConnection) forward(srv *Server) {
 	var err error
-	// Connect to remote
-	fconn.rconn, err = net.DialTCP("tcp", nil, fconn.raddr)
-	if err != nil {
-		fconn.Log.Warn("Remote connection failed: %s", err)
-		return
+	// Connect to remotes
+	for i, raddr := range fconn.raddrs {
+		fconn.rconns[i], err = net.DialTCP("tcp", nil, raddr)
+		if err != nil {
+			fconn.Log.Warn("Remote connection failed: %s", err)
+			return
+		}
+		defer fconn.rconns[i].Close()
 	}
 	srv.trackConn(fconn, true)
-	defer fconn.rconn.Close()
 
 	// Nagles?
 	if fconn.Nagles {
 		if conn, ok := fconn.lconn.(setNoDelayer); ok {
 			conn.SetNoDelay(true)
 		}
-		if conn, ok := fconn.rconn.(setNoDelayer); ok {
-			conn.SetNoDelay(true)
+		for i, rconn := range fconn.rconns {
+			if conn, ok := rconn.(setNoDelayer); ok {
+				conn.SetNoDelay(true)
+			}
 		}
 	}
 
 	// Display both ends
-	fconn.Log.Info("Opened %s >>> %s", fconn.laddr.String(), fconn.raddr.String())
+	for i, raddr := range fconn.raddrs {
+		fconn.Log.Info("Opened %s >>> %s", fconn.laddr.String(), raddr.String())
+	}
 
 	// Reset format for trace
 	if fconn.Binary {
@@ -104,8 +112,14 @@ func (fconn *forwardConnection) forward(srv *Server) {
 	}
 
 	// Bidirectional copy
-	go fconn.pipe(fconn.lconn, fconn.rconn)
-	go fconn.pipe(fconn.rconn, fconn.lconn)
+	rwriter := fconn.rconns[0];
+	rreader := fconn.rconns[0];
+	if len(fconns.rconns) > 1 {
+		rwriter = io.MultiWriter(fconn.rconns...)
+		rreader = io.MultiReader(fconn.rconns...)
+	}
+	go fconn.pipe(fconn.lconn, rwriter)
+	go fconn.pipe(rreader, fconn.lconn)
 
 	// Wait for close...
 	<-fconn.closed
@@ -121,8 +135,6 @@ func (fconn *forwardConnection) close() {
 	case <-fconn.closed:
 		// Already closed. Don't close again.
 	default:
-		fconn.lconn.Close()
-		fconn.rconn.Close()
 		close(fconn.closed)
 	}
 }
@@ -136,12 +148,14 @@ func (fconn *forwardConnection) isClosed() <-chan bool {
 func (fconn *forwardConnection) err(s string, err error) {
 	if err != io.EOF {
 		fconn.Log.Warn(s, err)
+	} else {
+		fconn.Log.Debug(s, err)
 	}
 
 	fconn.close()
 }
 
-func (fconn *forwardConnection) pipe(src, dst io.ReadWriter) {
+func (fconn *forwardConnection) pipe(src io.Reader, dst io.Writer) {
 	islocal := src == fconn.lconn
 
 	//directional copy (64k buffer)

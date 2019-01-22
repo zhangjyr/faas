@@ -10,22 +10,22 @@ import (
 	"github.com/openfaas/faas/watchdog/logger"
 )
 
-const REMOTE_PRIMARY int = 0
-const REMOTE_SECONDARY int = 1
-const REMOTE_MAX int = 2
+const REMOTE_TOTAL int = 2
 
 type Server struct {
 	Addr           string // TCP address to listen on
 	Verbose        bool
 	Debug          bool
 
-	mu             sync.Mutex
-	remotes        [REMOTE_MAX]*net.TCPAddr
+	mu             sync.RWMutex
+	remotes        [REMOTE_TOTAL]*net.TCPAddr
 	listener       *net.TCPListener
 	activeConn     map[*forwardConnection]struct{}
 	connid         uint64
 	listening      chan struct{}
 	done           chan struct{}
+	remotePrimary  int
+	remoteSecondary int
 }
 
 // ErrServerClosed is returned by the Server after a call to Shutdown or Close.
@@ -46,10 +46,15 @@ func (srv *Server) Listen() (*net.TCPListener, error) {
 
 	if srv.isListeningLocked() {
 		err = ErrServerListening
-	} else {
-		srv.listener, err = net.ListenTCP("tcp", laddr)
+		return srv.listener, err
 	}
-	return srv.listener, err
+
+	// Variable intialization and listen
+	srv.activeConn = make(map[*forwardConnection]struct{})
+	srv.done = make(chan struct{})
+	srv.remotePrimary = 0
+	srv.remoteSecondary = 1
+	return net.ListenTCP("tcp", laddr)
 }
 
 func (srv *Server) ListenAndProxy(remoteAddr string) error {
@@ -104,13 +109,59 @@ func (srv *Server) ListenAndProxy(remoteAddr string) error {
 }
 
 func (srv *Server) IsListening() bool {
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
+	srv.mu.RLock()
+	defer srv.mu.RUnlock()
 	return srv.isListeningLocked()
 }
 
+/**
+ * Forward request to another address
+ */
 func (srv *Server) Switch(remoteAddr string) error {
 	return srv.setRemoteAddr(remoteAddr)
+}
+
+/**
+ * Add secondary address to forward list.
+ */
+func (srv *Server) Share(remoteAddr string) error {
+	return srv.setShareAddr(remoteAddr)
+}
+
+/**
+ * Stop forwarding request to secondary address.
+ */
+func (srv *Server) Unshare() {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	srv.remotes[srv.remoteSecondary] = nil
+}
+
+/**
+ * Stop forwarding request to primary address and promote secondary address to primary.
+ */
+func (srv *Server) Promote() {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	srv.remotes[srv.remotePrimary] = nil
+	temp := srv.remotePrimary
+	srv.remotePrimary = srv.remoteSecondary
+	srv.remoteSecondary = temp
+}
+
+func (srv *Server) PrimaryAddr() *TCPAddr {
+	return srv.getRemoteAddr()[0]
+}
+
+func (srv *Server) SecondaryAddr() *TCPAddr {
+	addrs := srv.getRemoteAddr()
+	if len(addrs) > 1 {
+		return addrs[1]
+	} else {
+		return nil
+	}
 }
 
 func (srv *Server) Close() error {
@@ -128,15 +179,19 @@ func (srv *Server) Close() error {
 		fconn.close()
 		delete(srv.activeConn, fconn)
 	}
-	
+
 	return err
 }
 
-func (srv *Server) getRemoteAddr() *net.TCPAddr {
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
+func (srv *Server) getRemoteAddr() []*net.TCPAddr {
+	srv.mu.RLock()
+	defer srv.mu.RUnlock()
 
-	return srv.remotes[REMOTE_PRIMARY];
+	if srv.remote[srv.remoteSecondary] == nil {
+		return []*net.TCPAddr{srv.remotes[srv.remotePrimary]}
+	} else {
+		return []*net.TCPAddr{srv.remotes[srv.remotePrimary], srv.remotes[srv.remoteSecondary]}
+	}
 }
 
 func (srv *Server) setRemoteAddr(remoteAddr string) error {
@@ -148,17 +203,27 @@ func (srv *Server) setRemoteAddr(remoteAddr string) error {
 		return err
 	}
 
-	srv.remotes[REMOTE_PRIMARY] = raddr
+	srv.remotes[srv.remotePrimary] = raddr
+	return nil
+}
+
+func (srv *Server) setShareAddr(remoteAddr string) error {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	raddr, err := net.ResolveTCPAddr("tcp", remoteAddr)
+	if err != nil {
+		return err
+	}
+
+	srv.remotes[srv.remoteSecondary] = raddr
 	return nil
 }
 
 func (srv *Server) trackConn(fconn *forwardConnection, add bool) {
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
+	srv.mu.RLock()
+	defer srv.mu.RUnlock()
 
-	if srv.activeConn == nil {
-		srv.activeConn = make(map[*forwardConnection]struct{})
-	}
 	if add {
 		srv.activeConn[fconn] = struct{}{}
 	} else {
@@ -171,15 +236,12 @@ func (srv *Server) isListeningLocked() bool {
 }
 
 func (srv *Server) isDone() <-chan struct{} {
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
+	srv.mu.RLock()
+	defer srv.mu.RUnlock()
 	return srv.isDoneLocked()
 }
 
 func (srv *Server) isDoneLocked() chan struct{} {
-	if srv.done == nil {
-		srv.done = make(chan struct{})
-	}
 	return srv.done
 }
 

@@ -1,3 +1,5 @@
+FROM zhangjyr/openfaas-ics:b1 AS ics
+
 # A docker image for the func container.
 
 # default variant is the official alpine node image (much smaller than the standard image)
@@ -15,4 +17,14 @@ COPY server.js /usr/src/app/server.js
 
 CMD [ "npm", "start" ]
 
-EXPOSE 8888
+RUN mkdir -p /tmp
+COPY --from=ics /fwatchdog  /
+
+ENV fprocess="node server.js --port=%d"
+
+HEALTHCHECK --interval=5s CMD [ -e /tmp/.lock ] || exit 1
+
+CMD ["/fwatchdog"]
+
+EXPOSE 8080
+EXPOSE 8079
