@@ -17,8 +17,12 @@ if (!argv.port) {
 
 // User function.  Starts out undefined.
 let userFunction;
+let functionName;
 
 function loadFunction(modulepath, funcname) {
+    // Added by Tianium: Fix modulepath for relative path. module/submodule => ./module/submodule
+    modulepath = modulepath.replace(/^([^/])/, './$1');
+
     // Read and load the code. It's placed there securely by the fission runtime.
     try {
         let startTime = process.hrtime();
@@ -59,6 +63,8 @@ function specializeV2(req, res) {
 
     if(isFunction(result)){
         userFunction = result;
+        functionName = req.body.functionName;
+        console.log(`Serving function ${functionName}`);
         res.status(202).send();
     } else {
         res.status(500).send(JSON.stringify(result));
@@ -108,6 +114,13 @@ app.post('/v2/specialize', withEnsureGeneric(specializeV2));
 
 // Generic route -- all http requests go to the user function.
 app.all('/', function (req, res) {
+    // Check x-function header, ignore if not match
+    console.log("Incoming funciton request: " + req.headers['x-function']);
+    if (req.headers['x-function'] !== functionName) {
+        console.log(`Ignore unexpected funciton request, ${functionName} expected`);
+        return;
+    }
+
     if (!userFunction) {
         res.status(500).send("Generic container: no requests supported");
         return;
@@ -157,9 +170,13 @@ app.all('/', function (req, res) {
 
 });
 
-process.nextTick( () => {
-    request.get(util.format("http://localhost:8079/_/ready/%s", argv.port))
-        .on('error', (err) => console.log(err) );
-} );
+if (process.argv && process.argv[1] === __filename) {
+    process.nextTick( () => {
+        request.get(util.format("http://localhost:8079/_/ready/%s", argv.port))
+            .on('error', (err) => console.log(err) );
+    } );
 
-app.listen(argv.port);
+    app.listen(argv.port);
+}
+
+module.exports.loadFunction = loadFunction

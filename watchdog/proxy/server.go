@@ -18,6 +18,7 @@ type Server struct {
 	Debug          bool
 
 	mu             sync.RWMutex
+	remoteids      [REMOTE_TOTAL]int
 	remotes        [REMOTE_TOTAL]*net.TCPAddr
 	listener       *net.TCPListener
 	activeConn     map[*forwardConnection]struct{}
@@ -54,12 +55,13 @@ func (srv *Server) Listen() (*net.TCPListener, error) {
 	srv.done = make(chan struct{})
 	srv.remotePrimary = 0
 	srv.remoteSecondary = 1
-	return net.ListenTCP("tcp", laddr)
+	srv.listener, err = net.ListenTCP("tcp", laddr)
+	return srv.listener, err
 }
 
-func (srv *Server) ListenAndProxy(remoteAddr string) error {
+func (srv *Server) ListenAndProxy(id int, remoteAddr string, onProxy func(int)) error {
 	// Override remote address
-	err := srv.setRemoteAddr(remoteAddr)
+	err := srv.setRemoteAddr(id, remoteAddr)
 	if err != nil {
 		return err
 	}
@@ -70,6 +72,9 @@ func (srv *Server) ListenAndProxy(remoteAddr string) error {
 		return err
 	}
 	defer srv.Close()
+	if onProxy != nil {
+		go onProxy(id)
+	}
 
 	for {
 		conn, err := listener.AcceptTCP()
@@ -90,7 +95,8 @@ func (srv *Server) ListenAndProxy(remoteAddr string) error {
 		}
 
 		var fconn *forwardConnection
-		fconn = newForwardConnection(conn, listener.Addr().(*net.TCPAddr), srv.getRemoteAddr())
+		_, addrs := srv.getRemoteAddr()
+		fconn = newForwardConnection(conn, listener.Addr().(*net.TCPAddr), addrs)
 		fconn.Debug = srv.Debug
 		fconn.Nagles = true
 		fconn.Log = &logger.ColorLogger{
@@ -117,15 +123,15 @@ func (srv *Server) IsListening() bool {
 /**
  * Forward request to another address
  */
-func (srv *Server) Switch(remoteAddr string) error {
-	return srv.setRemoteAddr(remoteAddr)
+func (srv *Server) Switch(id int, remoteAddr string) error {
+	return srv.setRemoteAddr(id, remoteAddr)
 }
 
 /**
  * Add secondary address to forward list.
  */
-func (srv *Server) Share(remoteAddr string) error {
-	return srv.setShareAddr(remoteAddr)
+func (srv *Server) Share(id int, remoteAddr string) error {
+	return srv.setShareAddr(id, remoteAddr)
 }
 
 /**
@@ -135,6 +141,7 @@ func (srv *Server) Unshare() {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
+	srv.remoteids[srv.remoteSecondary] = 0
 	srv.remotes[srv.remoteSecondary] = nil
 }
 
@@ -145,22 +152,24 @@ func (srv *Server) Promote() {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
+	srv.remoteids[srv.remotePrimary] = 0
 	srv.remotes[srv.remotePrimary] = nil
 	temp := srv.remotePrimary
 	srv.remotePrimary = srv.remoteSecondary
 	srv.remoteSecondary = temp
 }
 
-func (srv *Server) PrimaryAddr() *TCPAddr {
-	return srv.getRemoteAddr()[0]
+func (srv *Server) Primary() int {
+	ids, _ := srv.getRemoteAddr()
+	return ids[0]
 }
 
-func (srv *Server) SecondaryAddr() *TCPAddr {
-	addrs := srv.getRemoteAddr()
-	if len(addrs) > 1 {
-		return addrs[1]
+func (srv *Server) Secondary() int {
+	ids, _ := srv.getRemoteAddr()
+	if len(ids) > 1 {
+		return ids[1]
 	} else {
-		return nil
+		return 0
 	}
 }
 
@@ -183,18 +192,19 @@ func (srv *Server) Close() error {
 	return err
 }
 
-func (srv *Server) getRemoteAddr() []*net.TCPAddr {
+func (srv *Server) getRemoteAddr() ([]int, []*net.TCPAddr) {
 	srv.mu.RLock()
 	defer srv.mu.RUnlock()
 
-	if srv.remote[srv.remoteSecondary] == nil {
-		return []*net.TCPAddr{srv.remotes[srv.remotePrimary]}
+	if srv.remotes[srv.remoteSecondary] == nil {
+		return []int{srv.remoteids[srv.remotePrimary]}, []*net.TCPAddr{srv.remotes[srv.remotePrimary]}
 	} else {
-		return []*net.TCPAddr{srv.remotes[srv.remotePrimary], srv.remotes[srv.remoteSecondary]}
+		return []int{srv.remoteids[srv.remotePrimary], srv.remoteids[srv.remoteSecondary]},
+			[]*net.TCPAddr{srv.remotes[srv.remotePrimary], srv.remotes[srv.remoteSecondary]}
 	}
 }
 
-func (srv *Server) setRemoteAddr(remoteAddr string) error {
+func (srv *Server) setRemoteAddr(id int, remoteAddr string) error {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
@@ -203,11 +213,12 @@ func (srv *Server) setRemoteAddr(remoteAddr string) error {
 		return err
 	}
 
+	srv.remoteids[srv.remotePrimary] = id
 	srv.remotes[srv.remotePrimary] = raddr
 	return nil
 }
 
-func (srv *Server) setShareAddr(remoteAddr string) error {
+func (srv *Server) setShareAddr(id int, remoteAddr string) error {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
@@ -216,6 +227,7 @@ func (srv *Server) setShareAddr(remoteAddr string) error {
 		return err
 	}
 
+	srv.remoteids[srv.remoteSecondary] = id
 	srv.remotes[srv.remoteSecondary] = raddr
 	return nil
 }

@@ -4,7 +4,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -18,6 +20,7 @@ import (
 	"sync/atomic"
 	"strconv"
 
+	"github.com/openfaas/faas/watchdog/types"
 	"github.com/openfaas/faas/watchdog/proxy"
 )
 
@@ -87,12 +90,24 @@ func makeReadyHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-func makeSpecializeHandler(ics *Scheduler, ) func(http.ResponseWriter, *http.Request) {
+func makeSpecializeHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
-			upstreamReq, _ := http.NewRequest(r.Method, ics.faasEnvs[ics.serving], nil)
+			function := r.Header.Get("X-FUNCTION")
+			if len(function) == 0 {
+				function = strings.TrimPrefix(r.URL.Path, "/_/specialize/")
+			}
+			if len(function) == 0 {
+				w.WriteHeader(http.StatusBadRequest)
+			}
 
+			err := ics.specialize(ics.serving, function)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
 			break
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -101,6 +116,8 @@ func makeSpecializeHandler(ics *Scheduler, ) func(http.ResponseWriter, *http.Req
 }
 
 // Add by Tianium
+var ErrSpecialization = errors.New("Scheduler: Failed to specialize environment")
+
 type FaasEnvironment struct {
 	cmd         *exec.Cmd
 	address     string
@@ -171,19 +188,25 @@ func (ics *Scheduler) RegisterFE(strPort string) int {
 
 	if !ics.Proxy.IsListening() {
 		go func() {
-			err := ics.Proxy.ListenAndProxy(fe.address)
-			if err != nil {
+			err := ics.Proxy.ListenAndProxy(port, fe.address, ics.makeOnProxyHandler())
+			if err != nil && err != proxy.ErrServerListening {
 				log.Printf("Error on proxy %d: %v\n", port, err)
 			}
 		}()
-		ics.serving = port
-		ics.Profiler("proxy")
 	}
 
 	return fe.cmd.Process.Pid
 }
 
-func (ics *Scheduler) pipeFE(prefix []byte, src io.ReadClose, dst io.Writer) {
+func (ics *Scheduler) makeOnProxyHandler() func(int) {
+	return func(port int) {
+		ics.serving = port
+		ics.Profiler("proxy")
+		log.Printf("Proxing %d\n", port)
+	}
+}
+
+func (ics *Scheduler) pipeFE(prefix []byte, src io.ReadCloser, dst io.Writer) {
 	//directional copy (64k buffer)
 	buff := make([]byte, 0xffff)
 	for {
@@ -216,9 +239,31 @@ func (ics *Scheduler) pipeFE(prefix []byte, src io.ReadClose, dst io.Writer) {
 	}
 }
 
-func (ics *Scheduler) specialize(port int, functionName string) {
+func (ics *Scheduler) specialize(port int, functionName string) error {
+	log.Printf("Specializing environment %d\n", port)
 	url := ics.faasEnvs[port].endpoint + "/v2/specialize"
-	upstreamReq, _ := http.NewRequest(http.MethodPost, url, nil)
-	upstreamReq.Body = r.Body
 
+	loadFunction := types.FunctionLoadRequest{
+		FilePath:         ics.Config.faasBasePath,
+		FunctionName:     functionName,
+	}
+	body, err := json.Marshal(loadFunction)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err == nil && resp.StatusCode < 300 {
+		// Success
+		resp.Body.Close()
+		return nil
+	}
+
+	if err != nil {
+		log.Printf("Failed to specialize environment %d: %v\n", port, err)
+	} else {
+		log.Printf("Failed to specialize environment %d: %d\n", port, resp.StatusCode)
+		err = ErrSpecialization
+	}
+	return err
 }

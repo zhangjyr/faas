@@ -14,6 +14,7 @@ WORKDIR /usr/src/app
 COPY package.json /usr/src/app/
 RUN npm install && npm cache clean --force
 COPY server.js /usr/src/app/server.js
+COPY example /usr/src/app/example
 
 CMD [ "npm", "start" ]
 
@@ -21,6 +22,7 @@ RUN mkdir -p /tmp
 COPY --from=ics /fwatchdog  /
 
 ENV fprocess="node server.js --port=%d"
+ENV faasBasePath="./example"
 
 HEALTHCHECK --interval=5s CMD [ -e /tmp/.lock ] || exit 1
 

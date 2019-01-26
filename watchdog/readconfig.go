@@ -60,6 +60,7 @@ func (ReadConfig) Read(hasEnv HasEnv) WatchdogConfig {
 		writeDebug:    false,
 		cgiHeaders:    true,
 		combineOutput: true,
+		faasBasePath:  ".",
 	}
 
 	cfg.faasProcess = hasEnv.Getenv("fprocess")
@@ -95,6 +96,8 @@ func (ReadConfig) Read(hasEnv HasEnv) WatchdogConfig {
 
 	// Add by Tianium
 	cfg.profile = hasEnv.Getenv("profile")
+
+	cfg.faasBasePath = hasEnv.Getenv("faasBasePath")
 
 	return cfg
 }
@@ -146,4 +149,6 @@ type WatchdogConfig struct {
 
 	// Add by Tianium: path of profile
 	profile string
+
+	faasBasePath string
 }

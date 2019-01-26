@@ -59,11 +59,12 @@ type forwardConnection struct {
 
 // New - Create a new forwardConnection instance. Takes over local connection passed in,
 // and closes it when finished.
-func newForwardConnection(lconn *net.TCPConn, laddr, raddrs []*net.TCPAddr) *forwardConnection {
+func newForwardConnection(lconn *net.TCPConn, laddr *net.TCPAddr, raddrs []*net.TCPAddr) *forwardConnection {
 	return &forwardConnection{
 		lconn:  lconn,
 		laddr:  laddr,
-		raddrs:  raddrs,
+		rconns: make([]io.ReadWriteCloser, len(raddrs)),
+		raddrs: raddrs,
 		closed: make(chan bool),
 		Log:    &logger.NilLogger{},
 	}
@@ -92,7 +93,7 @@ func (fconn *forwardConnection) forward(srv *Server) {
 		if conn, ok := fconn.lconn.(setNoDelayer); ok {
 			conn.SetNoDelay(true)
 		}
-		for i, rconn := range fconn.rconns {
+		for _, rconn := range fconn.rconns {
 			if conn, ok := rconn.(setNoDelayer); ok {
 				conn.SetNoDelay(true)
 			}
@@ -100,7 +101,7 @@ func (fconn *forwardConnection) forward(srv *Server) {
 	}
 
 	// Display both ends
-	for i, raddr := range fconn.raddrs {
+	for _, raddr := range fconn.raddrs {
 		fconn.Log.Info("Opened %s >>> %s", fconn.laddr.String(), raddr.String())
 	}
 
@@ -112,11 +113,11 @@ func (fconn *forwardConnection) forward(srv *Server) {
 	}
 
 	// Bidirectional copy
-	rwriter := fconn.rconns[0];
-	rreader := fconn.rconns[0];
-	if len(fconns.rconns) > 1 {
-		rwriter = io.MultiWriter(fconn.rconns...)
-		rreader = io.MultiReader(fconn.rconns...)
+	rwriter := fconn.rconns[0].(io.Writer);
+	rreader := fconn.rconns[0].(io.Reader);
+	if len(fconn.rconns) > 1 {
+		rwriter = io.MultiWriter(fconn.rconnWriters()...)
+		rreader = io.MultiReader(fconn.rconnReaders()...)
 	}
 	go fconn.pipe(fconn.lconn, rwriter)
 	go fconn.pipe(rreader, fconn.lconn)
@@ -229,4 +230,20 @@ func (fconn *forwardConnection) trace(islocal bool, bytes []byte, len int) {
 		fconn.Log.Debug("<<< %d bytes recieved", len)
 		fconn.Log.Trace(fconn.traceFormat, bytes)
 	}
+}
+
+func (fconn *forwardConnection) rconnReaders() []io.Reader {
+	rconns := make([]io.Reader, len(fconn.rconns))
+	for i, rconn := range fconn.rconns {
+	    rconns[i] = rconn.(io.Reader)
+	}
+	return rconns
+}
+
+func (fconn *forwardConnection) rconnWriters() []io.Writer {
+	rconns := make([]io.Writer, len(fconn.rconns))
+	for i, rconn := range fconn.rconns {
+	    rconns[i] = rconn.(io.Writer)
+	}
+	return rconns
 }
