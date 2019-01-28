@@ -7,6 +7,7 @@ WORKDIR /go/src/github.com/openfaas/faas/watchdog
 
 COPY main.go                .
 COPY handler.go             .
+COPY scheduler.go           .
 COPY readconfig.go          .
 COPY readconfig_test.go     .
 COPY types                  types

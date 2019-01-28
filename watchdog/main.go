@@ -73,9 +73,17 @@ func main() {
 	log.Printf("Read/write timeout: %s, %s. Port: %d\n", readTimeout, writeTimeout, config.adminPort)
 	http.HandleFunc("/_/health", makeHealthHandler())
 	http.HandleFunc("/_/ready/", makeReadyHandler(ics))
-	http.HandleFunc("/_/specialize/", makeSpecializeHandler(ics))
+	http.HandleFunc("/_/serve/", makeServeHandler(ics))
+	// http.HandleFunc("/_/share/", makeShareHandler(ics))
+	// http.HandleFunc("/_/swap/", makeSwapHandler(ics))
+	// http.HandleFunc("/_/promote/", makePromoteHandler(ics))
+	// http.HandleFunc("/_/unshare/", makeUnshareHandler(ics))
 
 	ics.LaunchFEs()
+
+	if len(config.faas) > 0 {
+		go ics.Serve(config.faas)
+	}
 
 	shutdownTimeout := config.writeTimeout
 	listenUntilShutdown(shutdownTimeout, s, &config)

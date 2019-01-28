@@ -99,6 +99,8 @@ func (ReadConfig) Read(hasEnv HasEnv) WatchdogConfig {
 
 	cfg.faasBasePath = hasEnv.Getenv("faasBasePath")
 
+	cfg.faas = hasEnv.Getenv("faas")
+
 	return cfg
 }
 
@@ -113,9 +115,6 @@ type WatchdogConfig struct {
 
 	// faasProcess is the process to exec
 	faasProcess string
-
-	// Add by Tianium: faas instances
-	instances int
 
 	// duration until the faasProcess will be killed
 	execTimeout time.Duration
@@ -150,5 +149,12 @@ type WatchdogConfig struct {
 	// Add by Tianium: path of profile
 	profile string
 
+	// faas instances
+	instances int
+
+	// base path for faas module
 	faasBasePath string
+
+	// start faas
+	faas string
 }
