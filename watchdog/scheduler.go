@@ -22,6 +22,8 @@ import (
 )
 
 var ErrSpecialization = errors.New("Scheduler: Failed to specialize environment")
+var ErrBusying = errors.New("Scheduler: Busying")
+var ErrNotAvailable = errors.New("Scheduler: No available environment")
 var ErrStatusTransition = errors.New("SchedulerStatus: Failed to transit")
 var ErrStatusPendding = errors.New("SchedulerStatus: Pendding and wait for transition")
 
@@ -29,6 +31,7 @@ type FaasEnvironment struct {
 	cmd         *exec.Cmd
 	address     string
 	endpoint    string
+	ready       bool
 }
 
 type SchedulerStatus int
@@ -67,7 +70,7 @@ func (status SchedulerStatus) swap() (SchedulerStatus, error) {
 }
 
 func (status SchedulerStatus) share() (SchedulerStatus, error) {
-	if status == STATUS_SERVING || status == STATUS_SHARING {
+	if status == STATUS_SERVING {
 		return STATUS_SHARING, nil
 	} else {
 		return status, ErrStatusTransition
@@ -114,39 +117,8 @@ func (ics *Scheduler) LaunchFEs() {
 	ics.mubusy.Unlock()
 
 	ics.faasEnvs = make(map[int]*FaasEnvironment, ics.Config.instances)
-	for i := 0; i < ics.Config.instances; i++ {
-		port := ics.Config.port + i + 1
-		// Pass i as id, and port to environments.
-		faasProcess := fmt.Sprintf(ics.Config.faasProcess, port)
-		log.Printf("Launching \"%s\"\n", faasProcess)
-		parts := strings.Split(faasProcess, " ")
-
-		execCmd := exec.Command(parts[0], parts[1:]...)
-		execStderr, err := execCmd.StderrPipe()
-		if err != nil {
-			log.Fatal(err)
-			continue
-		}
-		execStdout, err := execCmd.StdoutPipe()
-		if err != nil {
-			log.Fatal(err)
-			continue
-		}
-		err = execCmd.Start()
-		if err != nil {
-			log.Fatal(err)
-			continue
-		}
-
-		prefix := []byte(fmt.Sprintf("Environment %d: ", port))
-		go ics.pipeFE(prefix, execStderr, os.Stderr)
-		go ics.pipeFE(prefix, execStdout, os.Stdout)
-
-		ics.faasEnvs[port] = &FaasEnvironment{
-			cmd:     execCmd,
-			address: fmt.Sprintf(":%d", port),
-			endpoint: fmt.Sprintf("http://localhost:%d", port),
-		}
+	for i := 1; i <= ics.Config.instances; i++ {
+		go ics.launch(ics.Config.port + i)
 	}
 }
 
@@ -161,6 +133,7 @@ func (ics *Scheduler) RegisterFE(strPort string) int {
 		log.Printf("Error on proxy %d: unregistered.\n", port)
 		return -1
 	}
+	fe.ready = true
 	ics.mubusy.Lock()
 	ics.busying -= 1
 	ics.mubusy.Unlock()
@@ -195,19 +168,51 @@ func (ics *Scheduler) Serve(functionName string) error {
 		return err
 	}
 
-	ics.mubusy.Lock()
-	ics.busying += 1
-	ics.mubusy.Unlock()
+	ics.busy(false)
 	err = ics.specialize(ics.serving, functionName)
-	ics.mubusy.Lock()
-	ics.busying -= 1
-	ics.mubusy.Unlock()
+	ics.done()
 
 	if err == nil {
 		ics.ServingFunction = functionName
 		ics.status = status
 	}
 	ics.Profiler("serve")
+	return err
+}
+
+func (ics *Scheduler) Share(functionName string) error {
+	err := ics.busy(true)
+	if err != nil {
+		return err
+	}
+	defer ics.done()
+
+	ics.mustatus.Lock()
+	defer ics.mustatus.Unlock()
+
+	status, err := ics.status.share()
+	if err != nil {
+		return err
+	}
+
+	available := 0
+	for port, meta := range ics.faasEnvs {
+		if port != ics.serving && meta.ready {
+			available = port
+			break
+		}
+	}
+	if available == 0 {
+		return ErrNotAvailable
+	}
+
+	err = ics.specialize(available, functionName)
+	if err == nil {
+		ics.Proxy.Share(available, ics.faasEnvs[available].address)
+		ics.SharingFunction = functionName
+		ics.sharing = available
+		ics.status = status
+	}
 	return err
 }
 
@@ -271,6 +276,41 @@ func (ics *Scheduler) pipeFE(prefix []byte, src io.ReadCloser, dst io.Writer) {
 	}
 }
 
+func (ics *Scheduler) launch(port int) {
+	// Pass i as id, and port to environments.
+	faasProcess := fmt.Sprintf(ics.Config.faasProcess, port)
+	log.Printf("Launching \"%s\"\n", faasProcess)
+	parts := strings.Split(faasProcess, " ")
+
+	execCmd := exec.Command(parts[0], parts[1:]...)
+	execStderr, err := execCmd.StderrPipe()
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+	execStdout, err := execCmd.StdoutPipe()
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+	err = execCmd.Start()
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+
+	prefix := []byte(fmt.Sprintf("Environment %d: ", port))
+	go ics.pipeFE(prefix, execStderr, os.Stderr)
+	go ics.pipeFE(prefix, execStdout, os.Stdout)
+
+	ics.faasEnvs[port] = &FaasEnvironment{
+		cmd:     execCmd,
+		address: fmt.Sprintf(":%d", port),
+		endpoint: fmt.Sprintf("http://localhost:%d", port),
+		ready:   false,
+	}
+}
+
 func (ics *Scheduler) specialize(port int, functionName string) error {
 	log.Printf("Specializing environment %d\n", port)
 	url := ics.faasEnvs[port].endpoint + "/v2/specialize"
@@ -298,4 +338,21 @@ func (ics *Scheduler) specialize(port int, functionName string) error {
 		err = ErrSpecialization
 	}
 	return err
+}
+
+func (ics *Scheduler) busy(exclusive bool) error {
+	ics.mubusy.Lock()
+	if exclusive && ics.busying > 0 {
+		ics.mubusy.Unlock()
+		return ErrBusying
+	}
+	ics.busying += 1
+	ics.mubusy.Unlock()
+	return nil
+}
+
+func (ics *Scheduler) done() {
+	ics.mubusy.Lock()
+	ics.busying -= 1
+	ics.mubusy.Unlock()
 }

@@ -103,3 +103,28 @@ func makeServeHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
 		}
 	}
 }
+
+func makeShareHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			function := r.Header.Get("X-FUNCTION")
+			if len(function) == 0 {
+				function = strings.TrimPrefix(r.URL.Path, "/_/share/")
+			}
+			if len(function) == 0 {
+				w.WriteHeader(http.StatusBadRequest)
+			}
+
+			err := ics.Share(function)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
+			break
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}
+}

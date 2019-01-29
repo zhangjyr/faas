@@ -118,6 +118,7 @@ app.all('/', function (req, res) {
     console.log("Incoming funciton request: " + req.headers['x-function']);
     if (req.headers['x-function'] !== functionName) {
         console.log(`Ignore unexpected funciton request, ${functionName} expected`);
+        res.connection.destroy()
         return;
     }
 

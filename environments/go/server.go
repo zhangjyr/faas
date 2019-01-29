@@ -5,16 +5,22 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"plugin"
+	"strings"
 
 	"github.com/fission/fission/environments/go/context"
 )
 
 const (
 	CODE_PATH = "/userfunc/user"
+)
+
+var (
+	functionName string
 )
 
 type (
@@ -137,8 +143,15 @@ func specializeHandlerV2(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	segments := strings.SplitN(loadreq.FunctionName, ".", 2)
+	entity := "Handler"
+	if len(segments) > 1 {
+		entity = segments[1]
+	}
+
 	fmt.Println("Specializing ...")
-	userFunc = loadPlugin(loadreq.FilePath, loadreq.FunctionName)
+	userFunc = loadPlugin(filepath.Join(loadreq.FilePath, segments[0]), entity)
+	functionName = loadreq.FunctionName
 	fmt.Println("Done")
 }
 
@@ -161,6 +174,15 @@ func main() {
 
 	// Generic route -- all http requests go to the user function.
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Check x-function header, ignore if not match
+		log.Printf("Incoming funciton request: %s\n", r.Header.Get("X-FUNCTION"))
+		if r.Header.Get("X-FUNCTION") != functionName {
+			log.Printf("Ignore unexpected funciton request, %s expected\n", functionName)
+			conn, _, _ := w.(http.Hijacker).Hijack()
+			conn.Close()
+			return
+		}
+
 		if userFunc == nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte("Generic container: no requests supported"))

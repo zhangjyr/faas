@@ -116,8 +116,8 @@ func (fconn *forwardConnection) forward(srv *Server) {
 	rwriter := fconn.rconns[0].(io.Writer);
 	rreader := fconn.rconns[0].(io.Reader);
 	if len(fconn.rconns) > 1 {
-		rwriter = io.MultiWriter(fconn.rconnWriters()...)
-		rreader = io.MultiReader(fconn.rconnReaders()...)
+		rwriter = MultiWriter(fconn.rconnWriters()...)
+		rreader = MultiReader(fconn.rconnReaders()...)
 	}
 	go fconn.pipe(fconn.lconn, rwriter)
 	go fconn.pipe(rreader, fconn.lconn)

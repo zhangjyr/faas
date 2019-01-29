@@ -74,10 +74,13 @@ func main() {
 	http.HandleFunc("/_/health", makeHealthHandler())
 	http.HandleFunc("/_/ready/", makeReadyHandler(ics))
 	http.HandleFunc("/_/serve/", makeServeHandler(ics))
-	// http.HandleFunc("/_/share/", makeShareHandler(ics))
+	http.HandleFunc("/_/share/", makeShareHandler(ics))
 	// http.HandleFunc("/_/swap/", makeSwapHandler(ics))
 	// http.HandleFunc("/_/promote/", makePromoteHandler(ics))
 	// http.HandleFunc("/_/unshare/", makeUnshareHandler(ics))
+
+	shutdownTimeout := config.writeTimeout
+	idleConnsClosed := listenUntilShutdown(shutdownTimeout, s, &config)
 
 	ics.LaunchFEs()
 
@@ -85,8 +88,7 @@ func main() {
 		go ics.Serve(config.faas)
 	}
 
-	shutdownTimeout := config.writeTimeout
-	listenUntilShutdown(shutdownTimeout, s, &config)
+	<-idleConnsClosed
 }
 
 func markUnhealthy() error {
@@ -102,7 +104,7 @@ func markUnhealthy() error {
 // is sent at which point the code will wait `shutdownTimeout` before
 // closing off connections and a futher `shutdownTimeout` before
 // exiting
-func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, config* WatchdogConfig) {
+func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, config* WatchdogConfig) chan struct{} {
 
 	idleConnsClosed := make(chan struct{})
 	go func() {
@@ -156,7 +158,7 @@ func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, config* 
 		atomic.StoreInt32(&acceptingConnections, 1)
 	}
 
-	<-idleConnsClosed
+	return idleConnsClosed
 }
 
 func printVersion() {

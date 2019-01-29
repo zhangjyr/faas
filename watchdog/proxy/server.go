@@ -123,7 +123,7 @@ func (srv *Server) IsListening() bool {
 /**
  * Forward request to another address
  */
-func (srv *Server) Switch(id int, remoteAddr string) error {
+func (srv *Server) Swap(id int, remoteAddr string) error {
 	return srv.setRemoteAddr(id, remoteAddr)
 }
 
