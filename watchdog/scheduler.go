@@ -24,6 +24,7 @@ import (
 var ErrSpecialization = errors.New("Scheduler: Failed to specialize environment")
 var ErrBusying = errors.New("Scheduler: Busying")
 var ErrNotAvailable = errors.New("Scheduler: No available environment")
+var ErrUnregistered = errors.New("Scheduler: Unregistered environment")
 var ErrStatusTransition = errors.New("SchedulerStatus: Failed to transit")
 var ErrStatusPendding = errors.New("SchedulerStatus: Pendding and wait for transition")
 
@@ -134,9 +135,7 @@ func (ics *Scheduler) RegisterFE(strPort string) int {
 		return -1
 	}
 	fe.ready = true
-	ics.mubusy.Lock()
-	ics.busying -= 1
-	ics.mubusy.Unlock()
+	ics.done()
 
 	log.Printf("Environment is ready: (Pid %d, Address \"%s\").\n", fe.cmd.Process.Pid, fe.address)
 
@@ -157,8 +156,7 @@ func (ics *Scheduler) Serve(functionName string) error {
 
 	status, err := ics.status.serve()
 	if err == ErrStatusPendding {
-		reterr := make(chan error)
-		ics.pending = append(ics.pending, ics.makePendingCaller(ics.Serve, functionName, reterr))
+		reterr := ics.pendLocked(ics.Serve, functionName)
 		ics.mustatus.Unlock()
 		return <-reterr
 	}
@@ -182,7 +180,9 @@ func (ics *Scheduler) Serve(functionName string) error {
 
 func (ics *Scheduler) Share(functionName string) error {
 	err := ics.busy(true)
-	if err != nil {
+	if err == ErrBusying {
+		return ics.pend(ics.Share, functionName)
+	} else if err != nil {
 		return err
 	}
 	defer ics.done()
@@ -216,21 +216,155 @@ func (ics *Scheduler) Share(functionName string) error {
 	return err
 }
 
+func (ics *Scheduler) unshare(functionName string) error {
+	err := ics.busy(true)
+	if err == ErrBusying {
+		return ics.pend(ics.unshare, functionName)
+	} else if err != nil {
+		return err
+	}
+	// Done until relaunched
+	// defer ics.done()
+
+	ics.mustatus.Lock()
+	defer ics.mustatus.Unlock()
+
+	status, err := ics.status.unshare()
+	if err != nil {
+		return err
+	}
+
+	// Unshare
+	port := ics.sharing
+	ics.Proxy.Unshare()
+	ics.SharingFunction = ""
+	ics.sharing = 0
+	ics.status = status
+
+	// Relaunch
+	err = ics.terminate(port)
+	if err != nil {
+		return err
+	}
+
+	go ics.launch(port)
+	return nil
+}
+
+func (ics *Scheduler) Unshare() error {
+	return ics.unshare("")
+}
+
+func (ics *Scheduler) promote(functionName string) error {
+	err := ics.busy(true)
+	if err == ErrBusying {
+		return ics.pend(ics.promote, functionName)
+	} else if err != nil {
+		return err
+	}
+	// Done until relaunched
+	// defer ics.done()
+
+	ics.mustatus.Lock()
+	defer ics.mustatus.Unlock()
+
+	status, err := ics.status.promote()
+	if err != nil {
+		return err
+	}
+
+	// Promote
+	port := ics.serving
+	ics.Proxy.Promote()
+	ics.ServingFunction = ics.SharingFunction
+	ics.SharingFunction = ""
+	ics.serving = ics.sharing
+	ics.sharing = 0
+	ics.status = status
+
+	// Relaunch
+	err = ics.terminate(port)
+	if err != nil {
+		return err
+	}
+
+	go ics.launch(port)
+	return nil
+}
+
+func (ics *Scheduler) Promote() error {
+	return ics.promote("")
+}
+
+func (ics *Scheduler) Swap(functionName string) error {
+	err := ics.busy(true)
+	if err == ErrBusying {
+		return ics.pend(ics.Swap, functionName)
+	} else if err != nil {
+		return err
+	}
+	// Done until relaunched
+	// defer ics.done()
+
+	ics.mustatus.Lock()
+	defer ics.mustatus.Unlock()
+
+	status, err := ics.status.swap()
+	if err != nil {
+		return err
+	}
+
+	// Find available environment
+	available := 0
+	for port, meta := range ics.faasEnvs {
+		if port != ics.serving && meta.ready {
+			available = port
+			break
+		}
+	}
+	if available == 0 {
+		return ErrNotAvailable
+	}
+
+	// Swap to GC
+	if len(functionName) == 0 {
+		functionName = ics.ServingFunction
+	}
+
+	// Specialize
+	err = ics.specialize(available, functionName)
+	if err != nil {
+		return err
+	}
+
+	// Swap serving
+	port := ics.serving
+	ics.Proxy.Swap(available, ics.faasEnvs[available].address)
+	ics.ServingFunction = functionName
+	ics.serving = available
+	ics.status = status
+
+	// Relaunch
+	err = ics.terminate(port)
+	if err != nil {
+		return err
+	}
+
+	go ics.launch(port)
+	return nil
+}
+
 func (ics *Scheduler) makeOnProxyHandler() func(int) {
 	return func(port int) {
 		ics.mustatus.Lock()
 		ics.serving = port
 		ics.status, _ = ics.status.ready()
+		pending := ics.tbsettleLocked()
 		ics.mustatus.Unlock()
 
-		go func() {
-			for len(ics.pending) > 0 {
-				pending := ics.pending[0]
-				ics.pending = ics.pending[1:]
-
-				pending()
-			}
-		}()
+		if pending != nil {
+			go pending()
+		}
 
 		ics.Profiler("proxy")
 		log.Printf("Proxing %d\n", port)
@@ -279,7 +413,7 @@ func (ics *Scheduler) pipeFE(prefix []byte, src io.ReadCloser, dst io.Writer) {
 func (ics *Scheduler) launch(port int) {
 	// Pass i as id, and port to environments.
 	faasProcess := fmt.Sprintf(ics.Config.faasProcess, port)
-	log.Printf("Launching \"%s\"\n", faasProcess)
+	log.Printf("Launching \"%s\"...\n", faasProcess)
 	parts := strings.Split(faasProcess, " ")
 
 	execCmd := exec.Command(parts[0], parts[1:]...)
@@ -309,6 +443,26 @@ func (ics *Scheduler) launch(port int) {
 		endpoint: fmt.Sprintf("http://localhost:%d", port),
 		ready:   false,
 	}
+}
+
+func (ics *Scheduler) terminate(port int) error {
+	fe, registered := ics.faasEnvs[port]
+	if !registered {
+		log.Printf("Error on terminate %d: unregistered.\n", port)
+		return ErrUnregistered
+	}
+
+	log.Printf("Terminating \"%d\"...\n", fe.cmd.Process.Pid)
+	err := fe.cmd.Process.Kill()
+	if err != nil {
+		log.Printf("Error on termination: %v", err)
+		return err
+	}
+
+	// Wait for environment to exit, and avoid zombie.
+	fe.cmd.Process.Wait()
+	delete(ics.faasEnvs, port)
+	return nil
 }
 
 func (ics *Scheduler) specialize(port int, functionName string) error {
@@ -355,4 +509,46 @@ func (ics *Scheduler) done() {
 	ics.mubusy.Lock()
 	ics.busying -= 1
 	ics.mubusy.Unlock()
+
+	if ics.busying == 0 {
+		ics.settle()
+	}
+}
+
+func (ics *Scheduler) pend(caller func(string) error, functionName string) error {
+	ics.mustatus.Lock()
+	defer ics.mustatus.Unlock()
+
+	return <-ics.pendLocked(caller, functionName)
+}
+
+func (ics *Scheduler) pendLocked(caller func(string) error, functionName string) chan error {
+	reterr := make(chan error)
+	ics.pending = append(ics.pending, ics.makePendingCaller(caller, functionName, reterr))
+	return reterr
+}
+
+func (ics *Scheduler) settle() {
+	if len(ics.pending) == 0 {
+		return
+	}
+
+	var pending func()
+	ics.mustatus.Lock()
+	pending = ics.tbsettleLocked()
+	ics.mustatus.Unlock()
+
+	if pending != nil {
+		go pending()
+	}
+}
+
+func (ics *Scheduler) tbsettleLocked() func() {
+	if len(ics.pending) > 0 {
+		pending := ics.pending[0]
+		ics.pending = ics.pending[1:]
+		return pending
+	} else {
+		return nil
+	}
 }

@@ -65,7 +65,7 @@ func (mr *multiReader) Read(p []byte) (n int, err error) {
 		}
 	}
 	// All err
-	if len(mr.readers) > 0 {
+	if len(mr.readers) > 1 {
 		copy(p, dps[len(mr.readers) - 1])
 	}
 

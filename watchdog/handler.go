@@ -128,3 +128,59 @@ func makeShareHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
 		}
 	}
 }
+
+func makeUnshareHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			err := ics.Unshare()
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
+			break
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func makePromoteHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			err := ics.Promote()
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
+			break
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func makeSwapHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			function := r.Header.Get("X-FUNCTION")
+			if len(function) == 0 {
+				function = strings.TrimPrefix(r.URL.Path, "/_/swap/")
+			}
+
+			err := ics.Swap(function)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
+			break
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}
+}

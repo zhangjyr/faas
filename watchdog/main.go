@@ -75,9 +75,9 @@ func main() {
 	http.HandleFunc("/_/ready/", makeReadyHandler(ics))
 	http.HandleFunc("/_/serve/", makeServeHandler(ics))
 	http.HandleFunc("/_/share/", makeShareHandler(ics))
-	// http.HandleFunc("/_/swap/", makeSwapHandler(ics))
-	// http.HandleFunc("/_/promote/", makePromoteHandler(ics))
-	// http.HandleFunc("/_/unshare/", makeUnshareHandler(ics))
+	http.HandleFunc("/_/unshare/", makeUnshareHandler(ics))
+	http.HandleFunc("/_/swap/", makeSwapHandler(ics))
+	http.HandleFunc("/_/promote/", makePromoteHandler(ics))
 
 	shutdownTimeout := config.writeTimeout
 	idleConnsClosed := listenUntilShutdown(shutdownTimeout, s, &config)
