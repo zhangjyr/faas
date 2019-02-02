@@ -15,7 +15,7 @@ RUN go build -a -o /server server.go
 RUN go build -buildmode=plugin -a -o /hello example/hello.go
 RUN go build -buildmode=plugin -a -o /bye example/bye.go
 
-FROM zhangjyr/openfaas-ics:b1 AS ics
+FROM zhangjyr/hyperfaas-ics:b1 AS ics
 
 FROM ubuntu:18.04
 

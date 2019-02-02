@@ -71,31 +71,31 @@ function specializeV2(req, res) {
     }
 }
 
-function specialize(req, res) {
-    // Specialize this server to a given user function.  The user function
-    // is read from argv.codepath; it's expected to be placed there by the
-    // fission runtime.
-    //
-    const modulepath = argv.codepath || '/userfunc/user';
-
-    // Node resolves module paths according to a file's location. We load
-    // the file from argv.codepath, but tell users to put dependencies in
-    // the server's package.json; this means the function's dependencies
-    // are in /usr/src/app/node_modules.  We could be smarter and have the
-    // function deps in the right place in argv.codepath; b ut for now we
-    // just symlink the function's node_modules to the server's
-    // node_modules.
-    fs.symlinkSync('/usr/src/app/node_modules', `${path.dirname(modulepath)}/node_modules`);
-
-    const result = loadFunction(modulepath);
-
-    if(isFunction(result)){
-        userFunction = result;
-        res.status(202).send();
-    } else {
-        res.status(500).send(JSON.stringify(result));
-    }
-}
+// function specialize(req, res) {
+//     // Specialize this server to a given user function.  The user function
+//     // is read from argv.codepath; it's expected to be placed there by the
+//     // fission runtime.
+//     //
+//     const modulepath = argv.codepath || '/userfunc/user';
+//
+//     // Node resolves module paths according to a file's location. We load
+//     // the file from argv.codepath, but tell users to put dependencies in
+//     // the server's package.json; this means the function's dependencies
+//     // are in /usr/src/app/node_modules.  We could be smarter and have the
+//     // function deps in the right place in argv.codepath; b ut for now we
+//     // just symlink the function's node_modules to the server's
+//     // node_modules.
+//     fs.symlinkSync('/usr/src/app/node_modules', `${path.dirname(modulepath)}/node_modules`);
+//
+//     const result = loadFunction(modulepath);
+//
+//     if(isFunction(result)){
+//         userFunction = result;
+//         res.status(202).send();
+//     } else {
+//         res.status(500).send(JSON.stringify(result));
+//     }
+// }
 
 
 // Request logger
@@ -109,7 +109,7 @@ app.use(bodyParser.text({ type : "text/*" }));
 app.get("/healthz", function (req, res) {
     res.status(200).end();
 })
-app.post('/specialize', withEnsureGeneric(specialize));
+// app.post('/specialize', withEnsureGeneric(specialize));
 app.post('/v2/specialize', withEnsureGeneric(specializeV2));
 
 // Generic route -- all http requests go to the user function.
@@ -173,6 +173,14 @@ app.all('/', function (req, res) {
 
 if (process.argv && process.argv[1] === __filename) {
     process.nextTick( () => {
+        if (argv.specialize) {
+            var segments = argv.specialize.split('.');
+            var codepath = argv.codepath || './example'
+
+            userFunction = loadFunction(path.join(codepath, segments[0]), segments[1]);
+            functionName = argv.specialize;
+        }
+
         request.get(util.format("http://localhost:8079/_/ready/%s", argv.port))
             .on('error', (err) => console.log(err) );
     } );

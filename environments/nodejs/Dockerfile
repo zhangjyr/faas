@@ -1,4 +1,4 @@
-FROM zhangjyr/openfaas-ics:b1 AS ics
+FROM zhangjyr/hyperfaas-ics:b1 AS ics
 
 # A docker image for the func container.
 

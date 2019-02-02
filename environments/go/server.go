@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	CODE_PATH = "/userfunc/user"
+	CODE_PATH = "./example"
 )
 
 var (
@@ -90,28 +90,28 @@ func loadPlugin(codePath, entrypoint string) http.HandlerFunc {
 	}
 }
 
-func specializeHandler(w http.ResponseWriter, r *http.Request) {
-	if userFunc != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Not a generic container"))
-		return
-	}
-
-	_, err := os.Stat(CODE_PATH)
-	if err != nil {
-		if os.IsNotExist(err) {
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(CODE_PATH + ": not found"))
-			return
-		} else {
-			panic(err)
-		}
-	}
-
-	fmt.Println("Specializing ...")
-	userFunc = loadPlugin(CODE_PATH, "Handler")
-	fmt.Println("Done")
-}
+// func specializeHandler(w http.ResponseWriter, r *http.Request) {
+// 	if userFunc != nil {
+// 		w.WriteHeader(http.StatusBadRequest)
+// 		w.Write([]byte("Not a generic container"))
+// 		return
+// 	}
+//
+// 	_, err := os.Stat(CODE_PATH)
+// 	if err != nil {
+// 		if os.IsNotExist(err) {
+// 			w.WriteHeader(http.StatusNotFound)
+// 			w.Write([]byte(CODE_PATH + ": not found"))
+// 			return
+// 		} else {
+// 			panic(err)
+// 		}
+// 	}
+//
+// 	fmt.Println("Specializing ...")
+// 	userFunc = loadPlugin(CODE_PATH, "Handler")
+// 	fmt.Println("Done")
+// }
 
 func specializeHandlerV2(w http.ResponseWriter, r *http.Request) {
 	if userFunc != nil {
@@ -132,25 +132,26 @@ func specializeHandlerV2(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = os.Stat(loadreq.FilePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(CODE_PATH + ": not found"))
-			return
-		} else {
-			panic(err)
-		}
-	}
-
 	segments := strings.SplitN(loadreq.FunctionName, ".", 2)
 	entity := "Handler"
 	if len(segments) > 1 {
 		entity = segments[1]
 	}
 
+	path := filepath.Join(loadreq.FilePath, segments[0])
+	_, err = os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(path + ": not found"))
+			return
+		} else {
+			panic(err)
+		}
+	}
+
 	fmt.Println("Specializing ...")
-	userFunc = loadPlugin(filepath.Join(loadreq.FilePath, segments[0]), entity)
+	userFunc = loadPlugin(path, entity)
 	functionName = loadreq.FunctionName
 	fmt.Println("Done")
 }
@@ -161,15 +162,29 @@ func readinessProbeHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	var port int
+	var specialize string
 	flag.IntVar(&port, "port", 0, "Specify the port to listen")
+	flag.StringVar(&specialize, "specialize", "", "Specify the module to specialize on starting")
 	flag.Parse()
 
 	if port == 0 {
 		flag.CommandLine.Usage()
 	}
 
+	if len(specialize) > 0 {
+		go func() {
+			segments := strings.SplitN(specialize, ".", 2)
+			entity := "Handler"
+			if len(segments) > 1 {
+				entity = segments[1]
+			}
+			userFunc = loadPlugin(filepath.Join(CODE_PATH, segments[0]), entity)
+			functionName = specialize
+		}()
+	}
+
 	http.HandleFunc("/healthz", readinessProbeHandler)
-	http.HandleFunc("/specialize", specializeHandler)
+	// http.HandleFunc("/specialize", specializeHandler)
 	http.HandleFunc("/v2/specialize", specializeHandlerV2)
 
 	// Generic route -- all http requests go to the user function.

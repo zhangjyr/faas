@@ -1,0 +1,19 @@
+version: '2'
+services:
+  ics:
+    image: zhangjyr/goenv:b1
+    container_name: goics
+    ports:
+     - "8080:8080"
+     - "8079:8079"
+    environment:
+     - profile=/profile.log
+     - faas=hello
+    restart: always
+  env:
+    image: zhangjyr/goenv:b1
+    container_name: goenv
+    ports:
+     - "8081:8080"
+    command: /server -port 8080 -specialize hello
+    restart: always

@@ -1,5 +1,5 @@
 REGISTRY ?= zhangjyr
-IMAGE = $(REGISTRY)/openfaas-ics
+IMAGE = $(REGISTRY)/hyperfaas-ics
 
 TAG = b1
 
