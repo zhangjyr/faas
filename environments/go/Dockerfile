@@ -28,14 +28,14 @@ COPY --from=builder /hello /example/
 COPY --from=builder /bye /example/
 
 RUN mkdir -p /tmp
-COPY --from=ics /fwatchdog  /
+COPY --from=ics /ics  /
 
 ENV fprocess="/server -port %d"
 ENV faasBasePath="./example"
 
 HEALTHCHECK --interval=5s CMD [ -e /tmp/.lock ] || exit 1
 
-CMD ["/fwatchdog"]
+CMD ["/ics"]
 
 EXPOSE 8080
 EXPOSE 8079

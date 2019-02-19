@@ -190,7 +190,7 @@ func main() {
 	// Generic route -- all http requests go to the user function.
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Check x-function header, ignore if not match
-		log.Printf("Incoming funciton request: %s\n", r.Header.Get("X-FUNCTION"))
+		// log.Printf("Incoming funciton request: %s\n", r.Header.Get("X-FUNCTION"))
 		if r.Header.Get("X-FUNCTION") != functionName {
 			log.Printf("Ignore unexpected funciton request, %s expected\n", functionName)
 			conn, _, _ := w.(http.Hijacker).Hijack()

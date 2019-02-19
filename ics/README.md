@@ -12,3 +12,10 @@ You will need to provide a lock-file at `/tmp/.lock` so that the orchestration s
 
 * Expose TCP port 8080 over HTTP
 * Create `/tmp/.lock` or in whatever location responds to the OS tempdir syscall
+
+### Deployment
+
+~~~
+dep ensure
+make container
+~~~

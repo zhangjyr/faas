@@ -32,7 +32,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/openfaas/faas/watchdog/logger"
+	"github.com/openfaas/faas/ics/logger"
 )
 
 // forwardConnection - Manages a forwardConnection connection, piping data between local and remote.
@@ -47,7 +47,7 @@ type forwardConnection struct {
 	traceFormat   string
 	mu            sync.Mutex
 
-	Matcher  func([]byte)
+	Matcher  func(*forwardConnection, bool, []byte)
 	Replacer func([]byte) []byte
 
 	// Settings
@@ -159,9 +159,29 @@ func (fconn *forwardConnection) err(s string, err error) {
 func (fconn *forwardConnection) pipe(src io.Reader, dst io.Writer) {
 	islocal := src == fconn.lconn
 
-	//directional copy (64k buffer)
-	buff := make([]byte, 0xffff)
+	// Directional copy (64k buffer)
+	// Using double caching to buy time for matcher
+	buffs := [2][]byte{
+		make([]byte, 0xffff),
+		make([]byte, 0xffff)}
+	len := len(buffs)
+	pivot := 0
+	ready := make(chan []byte, len)
+	// Fill channel with buffers, and later filling depends on matcher.
+	ready <- buffs[pivot]
+	pivot++
+	ready <- buffs[pivot]
+
+	var buff []byte
 	for {
+		select {
+		case buff = <-ready:
+		// default:
+		// 	// Warn and wait
+		// 	fconn.Log.Warn("It takes too long to call matcher")
+		// 	buff = <-ready
+		}
+
 		n, readErr := src.Read(buff)
 		if readErr != nil {
 			select {
@@ -182,14 +202,21 @@ func (fconn *forwardConnection) pipe(src io.Reader, dst io.Writer) {
 		}
 		b := buff[:n]
 
-		//execute match
-		if fconn.Matcher != nil {
-			fconn.Matcher(b)
-		}
-
 		//execute replace
 		if fconn.Replacer != nil {
 			b = fconn.Replacer(b)
+		}
+
+		//execute match
+		if fconn.Matcher != nil {
+			go func() {
+				fconn.Matcher(fconn, islocal, b)
+				pivot++
+				ready <- buffs[pivot % len]
+			}()
+		} else {
+			pivot++
+			ready <- buffs[pivot % len]
 		}
 
 		//show output

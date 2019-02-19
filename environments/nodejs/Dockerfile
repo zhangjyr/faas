@@ -19,14 +19,14 @@ COPY example /usr/src/app/example
 CMD [ "npm", "start" ]
 
 RUN mkdir -p /tmp
-COPY --from=ics /fwatchdog  /
+COPY --from=ics /ics  /
 
 ENV fprocess="node server.js --port=%d"
 ENV faasBasePath="./example"
 
 HEALTHCHECK --interval=5s CMD [ -e /tmp/.lock ] || exit 1
 
-CMD ["/fwatchdog"]
+CMD ["/ics"]
 
 EXPOSE 8080
 EXPOSE 8079

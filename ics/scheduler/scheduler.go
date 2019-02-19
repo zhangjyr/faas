@@ -1,7 +1,7 @@
 // Copyright (c) Jingyuan Zhang. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-package main
+package scheduler
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,8 +18,11 @@ import (
 	"sync"
 	"strconv"
 
-	"github.com/openfaas/faas/watchdog/types"
-	"github.com/openfaas/faas/watchdog/proxy"
+	"github.com/openfaas/faas/ics/config"
+	"github.com/openfaas/faas/ics/types"
+	"github.com/openfaas/faas/ics/proxy"
+	"github.com/openfaas/faas/ics/monitor"
+	"github.com/openfaas/faas/ics/monitor/sampler"
 )
 
 var ErrSpecialization = errors.New("Scheduler: Failed to specialize environment")
@@ -27,6 +31,8 @@ var ErrNotAvailable = errors.New("Scheduler: No available environment")
 var ErrUnregistered = errors.New("Scheduler: Unregistered environment")
 var ErrStatusTransition = errors.New("SchedulerStatus: Failed to transit")
 var ErrStatusPendding = errors.New("SchedulerStatus: Pendding and wait for transition")
+
+var NameCPUAnalyser = "cpu"
 
 type FaasEnvironment struct {
 	cmd         *exec.Cmd
@@ -95,9 +101,9 @@ func (status SchedulerStatus) promote() (SchedulerStatus, error) {
 }
 
 type Scheduler struct{
-	Config       *WatchdogConfig
+	Config       *config.WatchdogConfig
 	Proxy        *proxy.Server
-	Profiler     ProfilerFunc
+	Profiler     func(string)
 
 	ServingFunction string
 	SharingFunction string
@@ -110,16 +116,47 @@ type Scheduler struct{
 	serving     int
 	sharing     int
 	pending     []func()
+	monitor     monitor.ResourceMonitor
+}
+
+func NewScheduler(cfg *config.WatchdogConfig, profiler func(string)) (*Scheduler, error) {
+	debug := len(cfg.Profile) > 0
+	ics := &Scheduler {
+		Config: cfg,
+		Profiler: profiler,
+		Proxy: proxy.NewServer(cfg.Port, false),
+		monitor: monitor.NewIntervalMonitor(nil),
+	}
+
+	cpuAnalyser := monitor.NewLinearAnalyser(
+		sampler.CPUUsageSamplerInstance(),
+		sampler.NewRequestSampler(ics.Proxy))
+	cpuAnalyser.SetDebug(debug)
+
+	ics.monitor.AddAnalyser(NameCPUAnalyser, cpuAnalyser)
+	ics.monitor.Start()
+	go func() {
+		for {
+			select {
+			case serving := <-ics.Proxy.ServingFeed:
+				ics.servingHandler(serving.(int32))
+			case err := <-ics.monitor.Error():
+				log.Printf("Error while monitor resources: %v\n", err)
+			}
+		}
+	}()
+
+	return ics, nil
 }
 
 func (ics *Scheduler) LaunchFEs() {
 	ics.mubusy.Lock()
-	ics.busying = ics.Config.instances
+	ics.busying = ics.Config.Instances
 	ics.mubusy.Unlock()
 
-	ics.faasEnvs = make(map[int]*FaasEnvironment, ics.Config.instances)
-	for i := 1; i <= ics.Config.instances; i++ {
-		go ics.launch(ics.Config.port + i)
+	ics.faasEnvs = make(map[int]*FaasEnvironment, ics.Config.Instances)
+	for i := 1; i <= ics.Config.Instances; i++ {
+		go ics.launch(ics.Config.Port + i)
 	}
 }
 
@@ -214,6 +251,10 @@ func (ics *Scheduler) Share(functionName string) error {
 		ics.status = status
 	}
 	return err
+}
+
+func (ics *Scheduler) Close() {
+	ics.Proxy.Close()
 }
 
 func (ics *Scheduler) unshare(functionName string) error {
@@ -412,7 +453,7 @@ func (ics *Scheduler) pipeFE(prefix []byte, src io.ReadCloser, dst io.Writer) {
 
 func (ics *Scheduler) launch(port int) {
 	// Pass i as id, and port to environments.
-	faasProcess := fmt.Sprintf(ics.Config.faasProcess, port)
+	faasProcess := fmt.Sprintf(ics.Config.FaasProcess, port)
 	log.Printf("Launching \"%s\"...\n", faasProcess)
 	parts := strings.Split(faasProcess, " ")
 
@@ -470,7 +511,7 @@ func (ics *Scheduler) specialize(port int, functionName string) error {
 	url := ics.faasEnvs[port].endpoint + "/v2/specialize"
 
 	loadFunction := types.FunctionLoadRequest{
-		FilePath:         ics.Config.faasBasePath,
+		FilePath:         ics.Config.FaasBasePath,
 		FunctionName:     functionName,
 	}
 	body, err := json.Marshal(loadFunction)
@@ -551,4 +592,24 @@ func (ics *Scheduler) tbsettleLocked() func() {
 	} else {
 		return nil
 	}
+}
+
+func (ics *Scheduler) servingHandler(requested int32) {
+	if requested % 10 == 0 {
+		expected, err := ics.monitor.GetAnalyser(NameCPUAnalyser).Query(float64(requested))
+		if err != nil {
+			return
+		}
+
+		// log.Printf("Estimate %d:%f", serving, expected)
+		if expected > 0.4 {
+			// 1 - 0.4 / expected = x / (10 + x)  => x = expected / 0.4 - 1
+			throttle := (expected / 0.4 - 1) * 10
+			log.Printf("Estimate %f,%f will be throttled", expected, throttle)
+			for i := 0; i < int(math.Floor(throttle)); i++ {
+				ics.Proxy.Throttle <- true
+			}
+		}
+	}
+
 }

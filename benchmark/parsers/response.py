@@ -37,6 +37,9 @@ class Response:
     def filter(self, func):
         return Response(filter(func, self.records))
 
+    def length(self):
+        return len(self.records)
+
     @staticmethod
     def parse(file):
         f = open(file,"r")

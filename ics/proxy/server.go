@@ -6,8 +6,12 @@ import (
 	"log"
 	"net"
 	"sync"
+	"sync/atomic"
+	"time"
 
-	"github.com/openfaas/faas/watchdog/logger"
+	"github.com/openfaas/faas/ics/logger"
+	"github.com/openfaas/faas/ics/utils/channel"
+	"github.com/openfaas/faas/ics/utils/channel/flash"
 )
 
 const REMOTE_TOTAL int = 2
@@ -16,6 +20,8 @@ type Server struct {
 	Addr           string // TCP address to listen on
 	Verbose        bool
 	Debug          bool
+	ServingFeed    <-chan interface{}
+	Throttle       chan bool
 
 	mu             sync.RWMutex
 	remoteids      [REMOTE_TOTAL]int
@@ -25,8 +31,21 @@ type Server struct {
 	connid         uint64
 	listening      chan struct{}
 	done           chan struct{}
+	serving        channel.Channel
 	remotePrimary  int
 	remoteSecondary int
+
+	// started        time.Time    // Time started listening
+	requested      int32          // Number of incoming requests.
+	served         int32          // Number of served requests.
+	// usage          uint64       // Accumulated serve time in nanoseconds.
+	// updated        uint64       // Last updated duration from started.
+}
+
+type Stats struct {
+	Requested      int32
+	Served         int32
+	Time           time.Time
 }
 
 // ErrServerClosed is returned by the Server after a call to Shutdown or Close.
@@ -34,6 +53,21 @@ var ErrServerClosed = errors.New("proxy: Server closed")
 
 // ErrServerListening is returned by the Server if server is listening.
 var ErrServerListening = errors.New("proxy: Server is listening")
+
+func NewServer(port int, debug bool) *Server{
+	srv := &Server{
+		Addr:       fmt.Sprintf(":%d", port),
+		Verbose:    debug,
+		Debug:      debug,
+	}
+	srv.activeConn = make(map[*forwardConnection]struct{})
+	srv.done = make(chan struct{})
+	srv.serving = flash.NewChannel()
+	srv.ServingFeed = srv.serving.Out()
+	srv.Throttle = make(chan bool, 10)
+
+	return srv
+}
 
 func (srv *Server) Listen() (*net.TCPListener, error) {
 	// Parse host address
@@ -51,8 +85,6 @@ func (srv *Server) Listen() (*net.TCPListener, error) {
 	}
 
 	// Variable intialization and listen
-	srv.activeConn = make(map[*forwardConnection]struct{})
-	srv.done = make(chan struct{})
 	srv.remotePrimary = 0
 	srv.remoteSecondary = 1
 	srv.listener, err = net.ListenTCP("tcp", laddr)
@@ -76,8 +108,9 @@ func (srv *Server) ListenAndProxy(id int, remoteAddr string, onProxy func(int)) 
 		go onProxy(id)
 	}
 
+	// throttling := false
 	for {
-		conn, err := listener.AcceptTCP()
+		buffconn, err := listener.AcceptTCP()
 		if err != nil {
 			select {
 			case <-srv.isDone():
@@ -89,25 +122,51 @@ func (srv *Server) ListenAndProxy(id int, remoteAddr string, onProxy func(int)) 
 		}
 		srv.connid++
 
-		logLevel := logger.LOG_LEVEL_INFO
-		if srv.Debug {
-			logLevel = logger.LOG_LEVEL_ALL
-		}
-
-		var fconn *forwardConnection
-		_, addrs := srv.getRemoteAddr()
-		fconn = newForwardConnection(conn, listener.Addr().(*net.TCPAddr), addrs)
-		fconn.Debug = srv.Debug
-		fconn.Nagles = true
-		fconn.Log = &logger.ColorLogger{
-			Verbose:     srv.Verbose,
-			Level:       logLevel,
-			Prefix:      fmt.Sprintf("Connection #%03d ", srv.connid),
-			Color:       true,
-		}
-
+		conn := buffconn
 		go func() {
 			defer  conn.Close()
+
+			select {
+			case <-srv.Throttle:
+				return
+			// case throttle := <-srv.Throttle:
+			// 	if throttle {
+			// 		buffconn.Close()
+			// 	}
+			// 	if throttling != throttle {
+			// 		if throttle {
+			// 			log.Printf("Server: start throttling...")
+			// 		} else {
+			// 			log.Printf("Server: end throttling.")
+			// 		}
+			// 		// throttling = throttle
+			// 	}
+			// 	continue
+			default:
+				// if throttling {
+				// 	log.Printf("Server: close connection.")
+				// 	buffconn.Close()
+				// 	continue
+				// }
+			}
+
+			logLevel := logger.LOG_LEVEL_WARN
+			if srv.Debug {
+				logLevel = logger.LOG_LEVEL_ALL
+			}
+
+			var fconn *forwardConnection
+			_, addrs := srv.getRemoteAddr()
+			fconn = newForwardConnection(conn, listener.Addr().(*net.TCPAddr), addrs)
+			fconn.Debug = srv.Debug
+			fconn.Nagles = true
+			fconn.Log = &logger.ColorLogger{
+				Verbose:     srv.Verbose,
+				Level:       logLevel,
+				Prefix:      fmt.Sprintf("Connection #%03d ", srv.connid),
+				Color:       true,
+			}
+			fconn.Matcher = srv.packageMatcher
 
 			fconn.forward(srv)
 		}()
@@ -177,19 +236,35 @@ func (srv *Server) Close() error {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
-	srv.doneLocked()
+	if !srv.doneLocked() {
+		srv.serving.Close()
 
-	var err error
-	if srv.isListeningLocked() {
-		err = srv.listener.Close()
+		var err error
+		if srv.isListeningLocked() {
+			err = srv.listener.Close()
+		}
+
+		for fconn := range srv.activeConn {
+			fconn.close()
+			delete(srv.activeConn, fconn)
+		}
+
+		return err
 	}
 
-	for fconn := range srv.activeConn {
-		fconn.close()
-		delete(srv.activeConn, fconn)
-	}
+	return nil
+}
 
-	return err
+func (srv *Server) Stats() *Stats {
+	return srv.RequestStats()
+}
+
+func (srv *Server) RequestStats() *Stats {
+	return &Stats{
+		Served: atomic.LoadInt32(&srv.served),
+		Requested: atomic.LoadInt32(&srv.requested),
+		Time: time.Now(),
+	}
 }
 
 func (srv *Server) getRemoteAddr() ([]int, []*net.TCPAddr) {
@@ -233,8 +308,8 @@ func (srv *Server) setShareAddr(id int, remoteAddr string) error {
 }
 
 func (srv *Server) trackConn(fconn *forwardConnection, add bool) {
-	srv.mu.RLock()
-	defer srv.mu.RUnlock()
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
 
 	if add {
 		srv.activeConn[fconn] = struct{}{}
@@ -257,14 +332,45 @@ func (srv *Server) isDoneLocked() chan struct{} {
 	return srv.done
 }
 
-func (srv *Server) doneLocked() {
+func (srv *Server) doneLocked() bool {
 	ch := srv.isDoneLocked()
 	select {
 	case <-ch:
 		// Already closed. Don't close again.
+		return true
 	default:
 		// Safe to close here. We're the only closer, guarded
 		// by s.mu.
 		close(ch)
+		return false
 	}
+}
+
+func (srv *Server) packageMatcher(fconn *forwardConnection, inbound bool, b []byte) {
+	method := string(b[:4])
+	switch method {
+	case "HTTP":
+		// Response
+		srv.countServed()
+	case "GET ":
+		// Reqeust
+		fallthrough
+	case "POST":
+		fallthrough
+	case "PUT ":
+		fallthrough
+	case "DELE":
+		srv.countRequested()
+	}
+}
+
+func (srv *Server) countRequested() int32 {
+	new := atomic.AddInt32(&srv.requested, 1)
+	srv.serving.In() <- new
+	return new
+}
+
+func (srv *Server) countServed() int32 {
+	new := atomic.AddInt32(&srv.served, 1)
+	return new
 }

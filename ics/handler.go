@@ -11,6 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+
+
+	"github.com/openfaas/faas/ics/scheduler"
 )
 
 func lockFilePresent() bool {
@@ -50,7 +53,7 @@ func makeHealthHandler() func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-func makeReadyHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
+func makeReadyHandler(ics *scheduler.Scheduler) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case
@@ -79,7 +82,7 @@ func makeReadyHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-func makeServeHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
+func makeServeHandler(ics *scheduler.Scheduler) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
@@ -104,7 +107,7 @@ func makeServeHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-func makeShareHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
+func makeShareHandler(ics *scheduler.Scheduler) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
@@ -129,7 +132,7 @@ func makeShareHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-func makeUnshareHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
+func makeUnshareHandler(ics *scheduler.Scheduler) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
@@ -146,7 +149,7 @@ func makeUnshareHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request)
 	}
 }
 
-func makePromoteHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
+func makePromoteHandler(ics *scheduler.Scheduler) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
@@ -163,7 +166,7 @@ func makePromoteHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request)
 	}
 }
 
-func makeSwapHandler(ics *Scheduler) func(http.ResponseWriter, *http.Request) {
+func makeSwapHandler(ics *scheduler.Scheduler) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:

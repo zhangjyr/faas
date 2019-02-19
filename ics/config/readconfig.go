@@ -1,7 +1,7 @@
 // Copyright (c) Alex Ellis 2017. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-package main
+package config
 
 import (
 	"strconv"
@@ -55,51 +55,51 @@ func parseIntValue(val string, fallback int) int {
 }
 
 // Read fetches config from environmental variables.
-func (ReadConfig) Read(hasEnv HasEnv) WatchdogConfig {
-	cfg := WatchdogConfig{
-		writeDebug:    false,
-		cgiHeaders:    true,
-		combineOutput: true,
-		faasBasePath:  ".",
+func (ReadConfig) Read(hasEnv HasEnv) *WatchdogConfig {
+	cfg := &WatchdogConfig{
+		WriteDebug:    false,
+		CgiHeaders:    true,
+		CombineOutput: true,
+		FaasBasePath:  ".",
 	}
 
-	cfg.faasProcess = hasEnv.Getenv("fprocess")
-	cfg.instances = parseIntValue(hasEnv.Getenv("instances"), 2)
+	cfg.FaasProcess = hasEnv.Getenv("fprocess")
+	cfg.Instances = parseIntValue(hasEnv.Getenv("instances"), 2)
 
-	cfg.readTimeout = parseIntOrDurationValue(hasEnv.Getenv("read_timeout"), time.Second*5)
-	cfg.writeTimeout = parseIntOrDurationValue(hasEnv.Getenv("write_timeout"), time.Second*5)
+	cfg.ReadTimeout = parseIntOrDurationValue(hasEnv.Getenv("read_timeout"), time.Second*5)
+	cfg.WriteTimeout = parseIntOrDurationValue(hasEnv.Getenv("write_timeout"), time.Second*5)
 
-	cfg.execTimeout = parseIntOrDurationValue(hasEnv.Getenv("exec_timeout"), time.Second*0)
-	cfg.port = parseIntValue(hasEnv.Getenv("port"), 8080)
-	cfg.adminPort = parseIntValue(hasEnv.Getenv("port"), 8079)
+	cfg.ExecTimeout = parseIntOrDurationValue(hasEnv.Getenv("exec_timeout"), time.Second*0)
+	cfg.Port = parseIntValue(hasEnv.Getenv("port"), 8080)
+	cfg.AdminPort = parseIntValue(hasEnv.Getenv("admin_port"), 8079)
 
 	writeDebugEnv := hasEnv.Getenv("write_debug")
 	if isBoolValueSet(writeDebugEnv) {
-		cfg.writeDebug = parseBoolValue(writeDebugEnv)
+		cfg.WriteDebug = parseBoolValue(writeDebugEnv)
 	}
 
 	cgiHeadersEnv := hasEnv.Getenv("cgi_headers")
 	if isBoolValueSet(cgiHeadersEnv) {
-		cfg.cgiHeaders = parseBoolValue(cgiHeadersEnv)
+		cfg.CgiHeaders = parseBoolValue(cgiHeadersEnv)
 	}
 
-	cfg.marshalRequest = parseBoolValue(hasEnv.Getenv("marshal_request"))
-	cfg.debugHeaders = parseBoolValue(hasEnv.Getenv("debug_headers"))
+	cfg.MarshalRequest = parseBoolValue(hasEnv.Getenv("marshal_request"))
+	cfg.DebugHeaders = parseBoolValue(hasEnv.Getenv("debug_headers"))
 
-	cfg.suppressLock = parseBoolValue(hasEnv.Getenv("suppress_lock"))
+	cfg.SuppressLock = parseBoolValue(hasEnv.Getenv("suppress_lock"))
 
-	cfg.contentType = hasEnv.Getenv("content_type")
+	cfg.ContentType = hasEnv.Getenv("content_type")
 
 	if isBoolValueSet(hasEnv.Getenv("combine_output")) {
-		cfg.combineOutput = parseBoolValue(hasEnv.Getenv("combine_output"))
+		cfg.CombineOutput = parseBoolValue(hasEnv.Getenv("combine_output"))
 	}
 
 	// Add by Tianium
-	cfg.profile = hasEnv.Getenv("profile")
+	cfg.Profile = hasEnv.Getenv("profile")
 
-	cfg.faasBasePath = hasEnv.Getenv("faasBasePath")
+	cfg.FaasBasePath = hasEnv.Getenv("faasBasePath")
 
-	cfg.faas = hasEnv.Getenv("faas")
+	cfg.Faas = hasEnv.Getenv("faas")
 
 	return cfg
 }
@@ -108,53 +108,53 @@ func (ReadConfig) Read(hasEnv HasEnv) WatchdogConfig {
 type WatchdogConfig struct {
 
 	// HTTP read timeout
-	readTimeout time.Duration
+	ReadTimeout time.Duration
 
 	// HTTP write timeout
-	writeTimeout time.Duration
+	WriteTimeout time.Duration
 
 	// faasProcess is the process to exec
-	faasProcess string
+	FaasProcess string
 
 	// duration until the faasProcess will be killed
-	execTimeout time.Duration
+	ExecTimeout time.Duration
 
 	// writeDebug write console stdout statements to the container
-	writeDebug bool
+	WriteDebug bool
 
 	// marshal header and body via JSON
-	marshalRequest bool
+	MarshalRequest bool
 
 	// cgiHeaders will make environmental variables available with all the HTTP headers.
-	cgiHeaders bool
+	CgiHeaders bool
 
 	// prints out all incoming and out-going HTTP headers
-	debugHeaders bool
+	DebugHeaders bool
 
 	// Don't write a lock file to /tmp/
-	suppressLock bool
+	SuppressLock bool
 
 	// contentType forces a specific pre-defined value for all responses
-	contentType string
+	ContentType string
 
 	// port for HTTP server
-	port int
+	Port int
 
 	// port for management
-	adminPort int
+	AdminPort int
 
 	// combineOutput combines stderr and stdout in response
-	combineOutput bool
+	CombineOutput bool
 
 	// Add by Tianium: path of profile
-	profile string
+	Profile string
 
 	// faas instances
-	instances int
+	Instances int
 
 	// base path for faas module
-	faasBasePath string
+	FaasBasePath string
 
 	// start faas
-	faas string
+	Faas string
 }

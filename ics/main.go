@@ -19,8 +19,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/openfaas/faas/watchdog/types"
-	"github.com/openfaas/faas/watchdog/proxy"
+	"github.com/openfaas/faas/ics/config"
+	"github.com/openfaas/faas/ics/types"
+	"github.com/openfaas/faas/ics/scheduler"
 )
 
 var (
@@ -41,36 +42,32 @@ func main() {
 	atomic.StoreInt32(&acceptingConnections, 0)
 
 	osEnv := types.OsEnv{}
-	readConfig := ReadConfig{}
-	config := readConfig.Read(osEnv)
+	readConfig := config.ReadConfig{}
+	cfg := readConfig.Read(osEnv)
 
-	if len(config.faasProcess) == 0 {
+	if len(cfg.FaasProcess) == 0 {
 		log.Panicln("Provide a valid process via fprocess environmental variable.")
 		return
 	}
 
-	readTimeout := config.readTimeout
-	writeTimeout := config.writeTimeout
+	readTimeout := cfg.ReadTimeout
+	writeTimeout := cfg.WriteTimeout
 
 	s := &http.Server{
-		Addr:           fmt.Sprintf(":%d", config.adminPort),
+		Addr:           fmt.Sprintf(":%d", cfg.AdminPort),
 		ReadTimeout:    readTimeout,
 		WriteTimeout:   writeTimeout,
 		MaxHeaderBytes: 1 << 20, // Max header of 1MB
 	}
 
-	ics := &Scheduler{
-		Config:     &config,
-		Proxy:      &proxy.Server{
-			Addr:       fmt.Sprintf(":%d", config.port),
-			Verbose:    len(config.profile) > 0,
-			Debug:      len(config.profile) > 0,
-		},
-		Profiler:   getProfiler(&config),
+	// debug := len(cfg.Profile) > 0
+	ics, err := scheduler.NewScheduler(cfg, getProfiler(cfg))
+	if err != nil {
+		log.Panicln(err)
 	}
-	defer ics.Proxy.Close()
+	defer ics.Close()
 
-	log.Printf("Read/write timeout: %s, %s. Port: %d\n", readTimeout, writeTimeout, config.adminPort)
+	log.Printf("Read/write timeout: %s, %s. Port: %d\n", readTimeout, writeTimeout, cfg.AdminPort)
 	http.HandleFunc("/_/health", makeHealthHandler())
 	http.HandleFunc("/_/ready/", makeReadyHandler(ics))
 	http.HandleFunc("/_/serve/", makeServeHandler(ics))
@@ -79,13 +76,13 @@ func main() {
 	http.HandleFunc("/_/swap/", makeSwapHandler(ics))
 	http.HandleFunc("/_/promote/", makePromoteHandler(ics))
 
-	shutdownTimeout := config.writeTimeout
-	idleConnsClosed := listenUntilShutdown(shutdownTimeout, s, &config)
+	shutdownTimeout := cfg.WriteTimeout
+	idleConnsClosed := listenUntilShutdown(shutdownTimeout, s, cfg)
 
 	ics.LaunchFEs()
 
-	if len(config.faas) > 0 {
-		go ics.Serve(config.faas)
+	if len(cfg.Faas) > 0 {
+		go ics.Serve(cfg.Faas)
 	}
 
 	<-idleConnsClosed
@@ -104,7 +101,7 @@ func markUnhealthy() error {
 // is sent at which point the code will wait `shutdownTimeout` before
 // closing off connections and a futher `shutdownTimeout` before
 // exiting
-func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, config* WatchdogConfig) chan struct{} {
+func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, cfg *config.WatchdogConfig) chan struct{} {
 
 	idleConnsClosed := make(chan struct{})
 	go func() {
@@ -138,7 +135,7 @@ func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, config* 
 	// Run the HTTP server in a separate go-routine.
 	go func() {
 		// Add by Tianium
-		profiler("admin", config)
+		profiler("admin", cfg)
 
 		if err := s.ListenAndServe(); err != http.ErrServerClosed {
 			log.Printf("Error ListenAndServe: %v", err)
@@ -146,7 +143,7 @@ func listenUntilShutdown(shutdownTimeout time.Duration, s *http.Server, config* 
 		}
 	}()
 
-	if config.suppressLock == false {
+	if cfg.SuppressLock == false {
 		path, writeErr := createLockFile()
 
 		if writeErr != nil {
@@ -171,12 +168,12 @@ func printVersion() {
 }
 
 // Add by Tianium
-func profiler(action string, config *WatchdogConfig) {
-	if len(config.profile) == 0 {
+func profiler(action string, cfg *config.WatchdogConfig) {
+	if len(cfg.Profile) == 0 {
 		return
 	}
 
-	file, openErr := os.OpenFile(config.profile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0660)
+	file, openErr := os.OpenFile(cfg.Profile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0660)
 	if openErr != nil {
 		log.Printf("Warning: failed to open profile. Error: %s.\n", openErr.Error())
 	}
@@ -190,10 +187,8 @@ func profiler(action string, config *WatchdogConfig) {
 	}
 }
 
-func getProfiler(config *WatchdogConfig) ProfilerFunc {
+func getProfiler(cfg *config.WatchdogConfig) func(string) {
 	return func(action string) {
-		profiler(action, config)
+		profiler(action, cfg)
 	}
 }
-
-type ProfilerFunc func(string)
