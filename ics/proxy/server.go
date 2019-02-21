@@ -92,18 +92,19 @@ func (srv *Server) Listen() (*net.TCPListener, error) {
 }
 
 func (srv *Server) ListenAndProxy(id int, remoteAddr string, onProxy func(int)) error {
-	// Override remote address
-	err := srv.setRemoteAddr(id, remoteAddr)
-	if err != nil {
-		return err
-	}
-
 	// Start server
 	listener, err := srv.Listen()
 	if err != nil {
 		return err
 	}
 	defer srv.Close()
+
+	// Override remote address
+	err = srv.setRemoteAddr(id, remoteAddr)
+	if err != nil {
+		return err
+	}
+
 	if onProxy != nil {
 		go onProxy(id)
 	}
@@ -366,11 +367,12 @@ func (srv *Server) packageMatcher(fconn *forwardConnection, inbound bool, b []by
 
 func (srv *Server) countRequested() int32 {
 	new := atomic.AddInt32(&srv.requested, 1)
-	srv.serving.In() <- new
+	srv.serving.In() <- new // (new - atomic.LoadInt32(&srv.served))
 	return new
 }
 
 func (srv *Server) countServed() int32 {
 	new := atomic.AddInt32(&srv.served, 1)
+	// srv.serving.In() <- (atomic.LoadInt32(&srv.requested) - new)
 	return new
 }
