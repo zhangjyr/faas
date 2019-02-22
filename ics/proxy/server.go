@@ -31,13 +31,15 @@ type Server struct {
 	connid         uint64
 	listening      chan struct{}
 	done           chan struct{}
-	serving        channel.Channel
+	servingFeed        channel.Channel
 	remotePrimary  int
 	remoteSecondary int
 
-	// started        time.Time    // Time started listening
+	started        time.Time      // Time started listening
 	requested      int32          // Number of incoming requests.
 	served         int32          // Number of served requests.
+	serving        int32          // Accurate serving requests.
+	sumResponse    int64          // Accumualated response time.
 	// usage          uint64       // Accumulated serve time in nanoseconds.
 	// updated        uint64       // Last updated duration from started.
 }
@@ -62,8 +64,8 @@ func NewServer(port int, debug bool) *Server{
 	}
 	srv.activeConn = make(map[*forwardConnection]struct{})
 	srv.done = make(chan struct{})
-	srv.serving = flash.NewChannel()
-	srv.ServingFeed = srv.serving.Out()
+	srv.servingFeed = flash.NewChannel()
+	srv.ServingFeed = srv.servingFeed.Out()
 	srv.Throttle = make(chan bool, 10)
 
 	return srv
@@ -88,6 +90,7 @@ func (srv *Server) Listen() (*net.TCPListener, error) {
 	srv.remotePrimary = 0
 	srv.remoteSecondary = 1
 	srv.listener, err = net.ListenTCP("tcp", laddr)
+	srv.started = time.Now()
 	return srv.listener, err
 }
 
@@ -238,7 +241,7 @@ func (srv *Server) Close() error {
 	defer srv.mu.Unlock()
 
 	if !srv.doneLocked() {
-		srv.serving.Close()
+		srv.servingFeed.Close()
 
 		var err error
 		if srv.isListeningLocked() {
@@ -366,13 +369,23 @@ func (srv *Server) packageMatcher(fconn *forwardConnection, inbound bool, b []by
 }
 
 func (srv *Server) countRequested() int32 {
-	new := atomic.AddInt32(&srv.requested, 1)
-	srv.serving.In() <- new // (new - atomic.LoadInt32(&srv.served))
-	return new
+	requested := atomic.AddInt32(&srv.requested, 1)
+	srv.servingFeed.In() <- requested
+	srv.countServing(1, requested)
+	return requested
 }
 
 func (srv *Server) countServed() int32 {
-	new := atomic.AddInt32(&srv.served, 1)
-	// srv.serving.In() <- (atomic.LoadInt32(&srv.requested) - new)
-	return new
+	served := atomic.AddInt32(&srv.served, 1)
+	srv.countServing(-1, served)
+	return served
+}
+
+func (srv *Server) countServing(diff int32, reference int32) int32 {
+	serving := atomic.AddInt32(&srv.serving, diff)
+	sumResponse := atomic.AddInt64(&srv.sumResponse, int64(-diff) * time.Since(srv.started).Nanoseconds())
+	if serving == 0 && diff < 0 && reference % 1000 == 0 { // reference: rate control
+		log.Printf("Mean server response time: %f", float64(sumResponse) / 1000000000.0 / float64(reference))
+	}
+	return serving
 }

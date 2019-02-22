@@ -98,7 +98,16 @@ func (ana *LinearAnalyser) Query(x float64) (float64, error) {
 	if !ana.determinated() {
 		return 0.0, ErrUndeterminate
 	}
-	return ana.queryLocked(ana.xSampler.MakeVariable(x, time.Now()))
+	sample := ana.xSampler.MakeVariable(x, time.Now())
+	ana.log.Debug("%f", sample.Value / float64(sample.Time.Sub(ana.lastX.Time).Nanoseconds()) * ana.lastInterval)
+	estimate, err := ana.queryLocked(sample)
+	if err == nil && estimate > 2 {
+		ana.log.Warn("Unusal estimate:%f, x:%f, sample.x:%f, lastInterval:%f, x.duration:%d",
+			estimate, x, sample.Value, ana.lastInterval, sample.Time.Sub(ana.lastX.Time).Nanoseconds())
+		return 1, ErrOverestimate
+	} else {
+		return estimate, err
+	}
 }
 
 func (ana *LinearAnalyser) Determinated() bool {
@@ -164,5 +173,5 @@ func (ana *LinearAnalyser) validate(y, x *sampler.Sample) float64 {
 }
 
 func (ana *LinearAnalyser) determinated() bool {
-	return ana.undetermination < 0.2
+	return ana.undetermination < 0.3
 }

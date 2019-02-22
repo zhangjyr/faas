@@ -13,7 +13,7 @@ services:
     sysctls:
      - net.core.somaxconn=1024
     cpu_period: 100000
-    cpu_quota: 50000
+    cpu_quota: 100000
   env:
     image: zhangjyr/goenv:b1
     container_name: goenv

@@ -9,12 +9,12 @@ from common.invoker import request
 from common.invoker import threadize
 
 def invoke(times, args = None):
-    entries = threadize(times, args, num = 8, reuse = False)
+    entries = threadize(times, args, num = 8, reuse = True)
     filtered = Response(entries).filter(lambda entry: entry[Response.FIELD_STATUSCODE] == 200)
     print("{0} Throttled".format(len(entries) - filtered.length()))
     if filtered.length() < 2:
         return 0
-        
+
     return reduce(
         lambda total, time: total + time,
         filtered.series(Response.FIELD_RESPONSE)
@@ -29,7 +29,7 @@ if len(sys.argv) > 1:
 
 req = newRequest(
     "GET",
-    "http://localhost:{0}/".format(port),
+    "http://server:{0}/".format(port),
     headers = {
         "X-FUNCTION": "hello"
     }

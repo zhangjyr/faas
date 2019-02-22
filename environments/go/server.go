@@ -12,7 +12,7 @@ import (
 	"plugin"
 	"strings"
 
-	"github.com/fission/fission/environments/go/context"
+	// "github.com/fission/fission/environments/go/context"
 )
 
 const (
@@ -80,11 +80,11 @@ func loadPlugin(codePath, entrypoint string) http.HandlerFunc {
 		return *h
 	case func(http.ResponseWriter, *http.Request):
 		return h
-	case func(context.Context, http.ResponseWriter, *http.Request):
-		return func(w http.ResponseWriter, r *http.Request) {
-			c := context.New()
-			h(c, w, r)
-		}
+	// case func(context.Context, http.ResponseWriter, *http.Request):
+	// 	return func(w http.ResponseWriter, r *http.Request) {
+	// 		c := context.New()
+	// 		h(c, w, r)
+	// 	}
 	default:
 		panic("Entry point not found: bad type")
 	}

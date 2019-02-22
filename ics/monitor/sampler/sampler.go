@@ -26,6 +26,10 @@ type Variable interface {
 	MakeVariable(float64, time.Time) *Sample
 }
 
+type ChannelSampler interface {
+	Sample() <-chan *Sample
+}
+
 type VariableSampler interface {
 	Sampler
 	Variable

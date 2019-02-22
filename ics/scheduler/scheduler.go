@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
+//	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -595,21 +595,21 @@ func (ics *Scheduler) tbsettleLocked() func() {
 }
 
 func (ics *Scheduler) servingHandler(requested int32) {
-	if requested % 10 == 0 {
-		expected, err := ics.monitor.GetAnalyser(NameCPUAnalyser).Query(float64(requested))
-		if err != nil {
-			return
-		}
-
-		// log.Printf("Estimate %d:%f", serving, expected)
-		if expected > 0.4 {
-			// 1 - 0.4 / expected = x / (10 + x)  => x = expected / 0.4 - 1
-			throttle := (expected / 0.4 - 1) * 10
-			log.Printf("Estimate %f,%f will be throttled", expected, throttle)
-			for i := 0; i < int(math.Floor(throttle)); i++ {
-				ics.Proxy.Throttle <- true
-			}
-		}
-	}
-
+	// log.Printf("%d", requested)
+	// if requested % 10 == 0 {
+	// 	_, err := ics.monitor.GetAnalyser(NameCPUAnalyser).Query(float64(requested))
+	// 	if err != nil && err != monitor.ErrOverestimate {
+	// 		return
+	// 	}
+	// //
+	// // 	// log.Printf("Estimate %d:%f", serving, expected)
+	// // 	if expected > 0.4 {
+	// // 		// 1 - 0.4 / expected = x / (10 + x)  => x = expected / 0.4 - 1
+	// // 		throttle := (expected / 0.4 - 1) * 10
+	// // 		log.Printf("Estimate %f,%f will be throttled", expected, throttle)
+	// // 		for i := 0; i < int(math.Ceil(throttle)); i++ {
+	// // 			ics.Proxy.Throttle <- true
+	// // 		}
+	// // 	}
+	// }
 }

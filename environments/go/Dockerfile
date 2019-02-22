@@ -8,12 +8,14 @@ ENV APP	   ${GOPATH}/src/github.com/fission/fission/environments/go
 ADD context	    ${APP}/context
 ADD server.go   ${APP}
 ADD example	    ${APP}/example
+ADD vendor	    ${APP}/vendor
 
 WORKDIR ${APP}
 RUN go get
 RUN go build -a -o /server server.go
 RUN go build -buildmode=plugin -a -o /hello example/hello.go
 RUN go build -buildmode=plugin -a -o /bye example/bye.go
+RUN go build -buildmode=plugin -a -o /benchmark_matrix example/benchmark_matrix.go
 
 FROM zhangjyr/hyperfaas-ics:b1 AS ics
 
@@ -26,6 +28,7 @@ RUN mkdir -p /example
 COPY --from=builder /server /
 COPY --from=builder /hello /example/
 COPY --from=builder /bye /example/
+COPY --from=builder /benchmark_matrix /example/
 
 RUN mkdir -p /tmp
 COPY --from=ics /ics  /
