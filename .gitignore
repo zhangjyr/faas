@@ -7,3 +7,5 @@ fwatchdog-armhf
 certifier
 .editorconfig
 /contrib/staging/
+benchmark/temp-plot.html
+benchmark/graphs/temp-plot.html

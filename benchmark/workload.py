@@ -20,6 +20,8 @@ req = newRequest(
 )
 
 base = os.path.dirname(__file__)
+if base == '':
+    base = '.'
 
 entries = threadize(workload, req, num = 12, reuse = False)
 

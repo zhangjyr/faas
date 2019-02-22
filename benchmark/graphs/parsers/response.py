@@ -51,10 +51,10 @@ class Response:
             fields[Response.FIELD_TIME] = float(fields[Response.FIELD_TIME])
             fields[Response.FIELD_STATUSCODE] = int(fields[Response.FIELD_STATUSCODE])
             fields[Response.FIELD_RESPONSE] = float(fields[Response.FIELD_RESPONSE])
-            if fields[Response.FIELD_STATUSCODE] == 200:
+            if len(fields) > Response.FIELD_ELAPSE:
                 fields[Response.FIELD_ELAPSE] = float(fields[Response.FIELD_ELAPSE])
             else:
-                fields[Response.FIELD_ELAPSE] = 0
+                fields.append(0)
 
             if fields[Response.FIELD_TIME] < start:
                 start = fields[Response.FIELD_TIME]

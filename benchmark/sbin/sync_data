@@ -1,0 +1,53 @@
+#!/bin/sh
+
+# Parse arguments
+OPTIND=1         # Reset in case getopts has been used previously in the shell.
+PREFIX=""
+USER="ubuntu"
+while getopts ":hp:" opt; do
+    case "$opt" in
+    h)
+        echo "sync_data [filename]"
+        echo "fileame: path relative to DATA directory"
+        echo "options:"
+        echo "  -p prefix of result file"
+        echo "  -u user for remote machine"
+        echo "  -h show help"
+        exit 0
+        ;;
+    p)
+        PREFIX=$OPTARG
+        ;;
+    u)
+        USER=$OPTARG
+        ;;
+    \?)
+        ;;
+    esac
+done
+shift $((OPTIND-1))
+
+PWD=`dirname $0`
+SCRIPT=response.csv
+if [ -n "$1" ] ; then
+    SCRIPT=$1
+fi
+FILE=faas/benchmark/data/$SCRIPT
+
+IPS=()
+# IPS=("34.202.243.214" "18.210.41.120" "100.26.126.14" "34.225.128.240" "35.175.22.154")
+HOSTS=("client1.gmu.tianium.com")
+
+HOME=/home/$USER
+DATA=$PWD/../data/${PREFIX}$SCRIPT
+
+mkdir -p `dirname $DATA`
+rm -f $DATA
+for IP in "${IPS[@]}"
+do
+    /bin/sh -c "ssh -t $USER@ec2-${IP//./-}.compute-1.amazonaws.com cat $HOME/$FILE" >> $DATA
+done
+for HOST in "${HOSTS[@]}"
+do
+    /bin/sh -c "ssh -t $USER@$HOST cat $HOME/$FILE" >> $DATA
+done
