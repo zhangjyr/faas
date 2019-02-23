@@ -39,7 +39,7 @@ if len(sys.argv) > 1:
             else:
                 port = val
         except ValueError:
-            filename = sys.argv[i]
+            function = sys.argv[i]
 
 req = newRequest(
     "GET",
