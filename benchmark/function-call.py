@@ -45,7 +45,7 @@ req = newRequest(
     "GET",
     "http://server:{0}/".format(port),
     headers = {
-        "X-FUNCTION": "hello"
+        "X-FUNCTION": function
     }
 )
 
