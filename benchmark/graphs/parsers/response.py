@@ -43,7 +43,7 @@ class Response:
         return len(self.records)
 
     @staticmethod
-    def parse(file):
+    def parse(file, name = None):
         f = open(file,"r")
 
         start = 9999999999
@@ -66,4 +66,6 @@ class Response:
         for i in range(len(records)):
             records[i][Response.FIELD_TIME] = records[i][Response.FIELD_TIME] - start
 
-        return Response(records, os.path.splitext(os.path.basename(file))[0])
+        if name == None:
+            name = os.path.splitext(os.path.basename(file))[0]
+        return Response(records, name)
