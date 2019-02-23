@@ -1,3 +1,4 @@
+import os
 
 class Response:
     FIELD_TIME = 0
@@ -5,8 +6,9 @@ class Response:
     FIELD_RESPONSE = 2
     FIELD_ELAPSE = 3
 
-    def __init__(self, records):
+    def __init__(self, records, name = None):
         self.records = records
+        self.name = name
 
     def series(self, field):
         return map(lambda record: record[field], self.records)
@@ -30,12 +32,12 @@ class Response:
 
         ret = []
         for i in range(len(groups)):
-            ret.append(Response(hash[groups[i]]))
+            ret.append(Response(hash[groups[i]], self.name))
 
         return ret
 
     def filter(self, func):
-        return Response(filter(func, self.records))
+        return Response(filter(func, self.records), self.name)
 
     def length(self):
         return len(self.records)
@@ -64,4 +66,4 @@ class Response:
         for i in range(len(records)):
             records[i][Response.FIELD_TIME] = records[i][Response.FIELD_TIME] - start
 
-        return Response(records)
+        return Response(records, os.path.splitext(os.path.basename(file))[0])
