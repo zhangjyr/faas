@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"plugin"
 	"strings"
+	"runtime"
 
 	// "github.com/fission/fission/environments/go/context"
 )
@@ -161,6 +162,9 @@ func readinessProbeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	log.Printf("CPUs: %d", runtime.NumCPU())
+	runtime.GOMAXPROCS(64)
+
 	var port int
 	var specialize string
 	flag.IntVar(&port, "port", 0, "Specify the port to listen")
