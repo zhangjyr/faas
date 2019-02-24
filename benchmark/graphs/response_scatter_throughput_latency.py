@@ -29,7 +29,7 @@ def prepare(trace, pencentile):
     return trace
 
 def scatter(traces):
-    percentile = 0.95
+    percentile = 0.5
     data = map(lambda trace: prepare(trace, percentile), traces)
 
     layout = go.Layout(

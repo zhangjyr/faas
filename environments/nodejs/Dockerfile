@@ -16,8 +16,6 @@ RUN npm install && npm cache clean --force
 COPY server.js /usr/src/app/server.js
 COPY example /usr/src/app/example
 
-CMD [ "npm", "start" ]
-
 RUN mkdir -p /tmp
 COPY --from=ics /ics  /
 

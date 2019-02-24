@@ -99,7 +99,7 @@ function specializeV2(req, res) {
 
 
 // Request logger
-app.use(morgan('combined'))
+// app.use(morgan('combined'))
 
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
@@ -115,7 +115,7 @@ app.post('/v2/specialize', withEnsureGeneric(specializeV2));
 // Generic route -- all http requests go to the user function.
 app.all('/', function (req, res) {
     // Check x-function header, ignore if not match
-    console.log("Incoming funciton request: " + req.headers['x-function']);
+    // console.log("Incoming funciton request: " + req.headers['x-function']);
     if (req.headers['x-function'] !== functionName) {
         console.log(`Ignore unexpected funciton request, ${functionName} expected`);
         res.connection.destroy()

@@ -22,7 +22,7 @@ COPY version.go             .
 
 RUN go test -v ./...
 # Stripping via -ldflags "-s -w"
-RUN CGO_ENABLED=1 GOOS=linux go build -a -ldflags "-s -w \
+RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags "-s -w \
         -X main.GitCommit=$GIT_COMMIT \
         -X main.Version=$VERSION" \
         -installsuffix cgo -o ics .
