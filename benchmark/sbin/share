@@ -1,0 +1,10 @@
+#!/bin/sh
+
+if [ -z "$1" ] ; then
+    echo "Please input the function name to swap"
+	exit 1
+fi
+
+curl -X POST \
+  http://server:8079/_/share/$1 \
+  -H 'cache-control: no-cache'
