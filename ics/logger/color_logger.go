@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"fmt"
+	"log"
 
 	"github.com/mgutz/ansi"
 )
@@ -59,5 +59,5 @@ func (logger *ColorLogger) log(color, format string, args ...interface{}) {
 	if logger.Color && color != "" {
 		format = ansi.Color(format, color)
 	}
-	fmt.Printf(fmt.Sprintf("%s%s\n", logger.Prefix, format), args...)
+	log.Printf(logger.Prefix + format, args...)
 }

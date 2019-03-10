@@ -15,7 +15,6 @@ type multiret struct {
 
 type multiReader struct {
 	readers   []io.Reader
-	readings  []bool
 }
 
 func (mr *multiReader) readFrom(reader io.Reader, idx int, p []byte, done chan multiret) {
@@ -31,12 +30,12 @@ func (mr *multiReader) Read(p []byte) (n int, err error) {
 		return mr.readers[0].Read(p)
 	}
 
-	done := make(chan multiret, len(mr.readers))
-	dps := make([][]byte, len(mr.readers))
+	lr := len(mr.readers)
+	lp := len(p)
+	done := make(chan multiret, lr)
+	ps := make([]byte, lp * lr)
 	for i, reader := range mr.readers {
-		dp := make([]byte, len(p))
-		go mr.readFrom(reader, i, dp, done)
-		dps[i] = dp
+		go mr.readFrom(reader, i, ps[(i * lp):(i * lp + lp)], done)
 	}
 
 	// Only one reader may return result, EOF or err for others
@@ -45,18 +44,17 @@ func (mr *multiReader) Read(p []byte) (n int, err error) {
 		n, err = ret.n, ret.err
 		if err == nil {
 			mr.readers = mr.readers[ret.from:ret.from + 1]
-			copy(p, dps[ret.from])
+			copy(p, ps[(ret.from * lp):(ret.from * lp + lp)])
 			break
 		}
 	}
 	// All err
-	if len(mr.readers) > 1 {
-		copy(p, dps[len(mr.readers) - 1])
+	if err != nil {
+		copy(p, ps[(lr * lp - lp):])
 	}
 
 	return n, err
 }
-
 
 // MultiReader returns a Reader that read from one of
 // the provided input readers. Once any inputs have returned EOF or error,
@@ -66,7 +64,6 @@ func MultiReader(readers ...io.Reader) io.Reader {
 	copy(r, readers)
 	return &multiReader{
 		readers: r,
-		readings: make([]bool, len(readers)),
 	}
 }
 

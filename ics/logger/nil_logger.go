@@ -1,19 +1,21 @@
 package logger
 
 // NullLogger - An empty logger that ignores everything
-type NilLogger struct{}
+type nilLogger struct{}
 
 // Trace - no-op
-func (logger *NilLogger) Trace(format string, args ...interface{}) {}
+func (logger *nilLogger) Trace(format string, args ...interface{}) {}
 
 // Debug - no-op
-func (logger *NilLogger) Debug(format string, args ...interface{}) {}
+func (logger *nilLogger) Debug(format string, args ...interface{}) {}
 
 // Info - no-op
-func (logger *NilLogger) Info(format string, args ...interface{}) {}
+func (logger *nilLogger) Info(format string, args ...interface{}) {}
 
 // Warn - no-op
-func (logger *NilLogger) Warn(format string, args ...interface{}) {}
+func (logger *nilLogger) Warn(format string, args ...interface{}) {}
 
 // Warn - no-op
-func (logger *NilLogger) Error(format string, args ...interface{}) {}
+func (logger *nilLogger) Error(format string, args ...interface{}) {}
+
+var NilLogger = &nilLogger{}

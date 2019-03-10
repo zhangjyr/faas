@@ -1,0 +1,5 @@
+#!/bin/sh
+
+curl -X POST \
+  http://server:8079/_/promote/ \
+  -H 'cache-control: no-cache'
