@@ -11,7 +11,7 @@ type MovingSum struct {
 func NewMovingSum(window int) *MovingSum {
 	return &MovingSum{
 		window : window,
-		n: 0.0,
+		n: 0,
 		values : make([]float64, window),
 		last: 0.0,
 		sum: 0.0,

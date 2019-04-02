@@ -9,7 +9,8 @@ import (
 	"github.com/openfaas/faas/ics/logger"
 )
 
-var DefaultSSEWindow = 1000
+// var AnalysisWindow = 60
+var DefaultSSEWindow = 30
 
 type LinearAnalyser struct {
 	log                    logger.ILogger
@@ -19,11 +20,11 @@ type LinearAnalyser struct {
 	lastInterval           float64
 	lastY, lastX           *sampler.Sample
 	num                    float64
-	sumx, sumy             float64
-	ssx                    float64
-	sumxy                  float64
-	mSST                   float64
-	mSSY, mSSE, mSumY      *model.MovingSum
+	x, y                   *model.Sum
+	sx                     *model.Sum
+	xy                     *model.Sum
+	sst                    float64
+	syv, sev, yv           *model.MovingSum	// Square of Y for Verfication, Square of Err for Verficatoin, and Y for Verfication
 
 	// sync values
 	mu                     sync.RWMutex
@@ -36,9 +37,13 @@ func NewLinearAnalyser(y sampler.Sampler, x sampler.VariableSampler) *LinearAnal
 		ySampler: y,
 		xSampler: x,
 		pause: true,
-		mSSY: model.NewMovingSum(DefaultSSEWindow),
-		mSSE: model.NewMovingSum(DefaultSSEWindow),
-		mSumY: model.NewMovingSum(DefaultSSEWindow),
+		x: model.NewSum(),
+		y: model.NewSum(),
+		sx: model.NewSum(),
+		xy: model.NewSum(),
+		syv: model.NewMovingSum(DefaultSSEWindow),
+		sev: model.NewMovingSum(DefaultSSEWindow),
+		yv: model.NewMovingSum(DefaultSSEWindow),
 	}
 	return ana
 }
@@ -119,11 +124,11 @@ func (ana *LinearAnalyser) Determinated() bool {
 
 // calculate a, b, sst
 func (ana *LinearAnalyser) calculate(y, x *sampler.Sample) {
-	ana.num += 1
-	ana.sumx += x.Value
-	ana.sumy += y.Value
-	ana.ssx += x.Value * x.Value
-	ana.sumxy += x.Value * y.Value
+	ana.x.Add(x.Value)
+	ana.y.Add(y.Value)
+	ana.sx.Add(x.Value * x.Value)
+	ana.xy.Add(x.Value * y.Value)
+	ana.num = float64(ana.x.N())
 
 	if ana.num < 2 {
 		ana.lastY = y
@@ -132,12 +137,12 @@ func (ana *LinearAnalyser) calculate(y, x *sampler.Sample) {
 	}
 
 	var b float64
-	if ana.sumx > 0 {
-		b = (ana.num * ana.sumxy - ana.sumx * ana.sumy) / (ana.num * ana.ssx - ana.sumx * ana.sumx)
+	if ana.x.Sum() > 0 {
+		b = (ana.num * ana.xy.Sum() - ana.x.Sum() * ana.y.Sum()) / (ana.num * ana.sx.Sum() - ana.x.Sum() * ana.x.Sum())
 	}
-	a := (ana.sumy - b * ana.sumx) / ana.num
-	ana.mSST = ana.mSSY.Sum() - ana.mSumY.Sum() * ana.mSumY.Sum() / float64(ana.mSumY.N())
-	undetermination :=  ana.mSSE.Sum() / ana.mSST
+	a := (ana.y.Sum() - b * ana.x.Sum()) / ana.num
+	ana.sst = ana.syv.Sum() - ana.yv.Sum() * ana.yv.Sum() / float64(ana.yv.N())
+	undetermination :=  ana.sev.Sum() / ana.sst
 
 	ana.mu.Lock()
 	ana.b = b
@@ -165,9 +170,9 @@ func (ana *LinearAnalyser) validate(y, x *sampler.Sample) float64 {
 
 	if err == nil {
 		e := y.Value - expected
-		ana.mSSY.Add(y.Value * y.Value)
-		ana.mSSE.Add(e * e)
-		ana.mSumY.Add(y.Value)
+		ana.syv.Add(y.Value * y.Value)
+		ana.sev.Add(e * e)
+		ana.yv.Add(y.Value)
 	}
 	return expected
 }

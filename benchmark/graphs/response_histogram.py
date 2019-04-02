@@ -21,14 +21,26 @@ def histogram(traces):
     )
 
     fig = go.Figure(data = data, layout = layout)
-    plotly.plotly.iplot(fig, auto_open = True)
+    plotly.offline.plot(fig, auto_open = True)
 
 if __name__ == "__main__":
     base = os.path.abspath('.')
 
     files = []
-    for i in range(len(sys.argv) - 1):
-        files.append(sys.argv[i + 1])
+    skip = False
+    for i in range(1, len(sys.argv)):
+        if skip:
+            skip = False
+            continue
+
+        file = sys.argv[i]
+        if file.replace("{0}", "") != file and len(sys.argv) > i + 1:
+            files = files + map(
+                lambda postfix: file.format("_" + postfix), sys.argv[i + 1].split(",")
+            )
+            skip = True
+        else:
+            files.append(file)
 
     histogram(map(
         lambda file: Response.parse(file).filter(

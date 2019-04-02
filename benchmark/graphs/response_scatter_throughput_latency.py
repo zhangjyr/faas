@@ -29,7 +29,7 @@ def prepare(trace, pencentile):
     return trace
 
 def scatter(traces):
-    percentile = 0.5
+    percentile = 0.99
     data = map(lambda trace: prepare(trace, percentile), traces)
 
     layout = go.Layout(
@@ -37,7 +37,7 @@ def scatter(traces):
     )
 
     fig = go.Figure(data = data, layout = layout)
-    plotly.plotly.iplot(fig, auto_open=True)
+    plotly.offline.plot(fig, auto_open=True)
 
 # python graphs/response_scatter_throughput_latency.py file_pattern postfixes[ file_pattern_2 postfixes_2]
 # Example python graphs/response_scatter_throughput_latency.py data/10_hello{0}.csv 1,2,4,8,16,32

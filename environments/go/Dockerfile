@@ -17,6 +17,7 @@ RUN go build -buildmode=plugin -a -o /hello example/hello.go
 RUN go build -buildmode=plugin -a -o /bye example/bye.go
 RUN go build -buildmode=plugin -a -o /benchmark_matrix example/benchmark_matrix.go
 RUN go build -buildmode=plugin -a -o /benchmark_cpu example/benchmark_cpu.go
+RUN go build -buildmode=plugin -a -o /pause example/pause.go
 
 FROM zhangjyr/hyperfaas-ics:b1 AS ics
 
@@ -31,6 +32,7 @@ COPY --from=builder /hello /example/
 COPY --from=builder /bye /example/
 COPY --from=builder /benchmark_matrix /example/
 COPY --from=builder /benchmark_cpu /example/
+COPY --from=builder /pause /example/
 
 RUN mkdir -p /tmp
 COPY --from=ics /ics  /
