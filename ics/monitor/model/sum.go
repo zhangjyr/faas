@@ -1,7 +1,13 @@
 package model
 
+type Sumer interface {
+	Add(float64)
+	Sum() float64
+	N() int64
+}
+
 type Sum struct {
-	n      int
+	n      int64
 	sum    float64
 }
 
@@ -12,17 +18,15 @@ func NewSum() *Sum {
 	}
 }
 
-func (sum *Sum) Add(val float64) float64 {
+func (sum *Sum) Add(val float64) {
 	sum.sum += val
 	sum.n += 1
-
-	return sum.sum
 }
 
 func (sum *Sum) Sum() float64 {
 	return sum.sum
 }
 
-func (sum *Sum) N() int {
+func (sum *Sum) N() int64 {
 	return sum.n
 }

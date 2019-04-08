@@ -10,7 +10,7 @@ import (
 )
 
 // var AnalysisWindow = 60
-var DefaultSSEWindow = 30
+var DefaultSSEWindow int64 = 30
 
 type LinearAnalyser struct {
 	log                    logger.ILogger
@@ -70,7 +70,7 @@ func (ana *LinearAnalyser) SetDebug(debug bool) {
 	}
 }
 
-func (ana *LinearAnalyser) Sample(event *ResourceEvent) error {
+func (ana *LinearAnalyser) Analyse(event *ResourceEvent) error {
 	y, errY := ana.ySampler.Sample(event.Time)
 	x, errX := ana.xSampler.Sample(event.Time)
 	if errY == sampler.ErrNotEnoughData || errX == sampler.ErrNotEnoughData {

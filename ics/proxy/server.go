@@ -31,7 +31,7 @@ type Server struct {
 	connid         uint64
 	listening      chan struct{}
 	done           chan struct{}
-	servingFeed        channel.Channel
+	servingFeed    channel.Channel
 	remotePrimary  int
 	remoteSecondary int
 

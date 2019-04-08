@@ -18,7 +18,7 @@ type ResourceAnalyser interface {
 	Stop() error
 
 	// Take sample.
-	Sample(*ResourceEvent) error
+	Analyse(*ResourceEvent) error
 
 	// Events are returned on this channel.
 	Query(float64) (float64, error)

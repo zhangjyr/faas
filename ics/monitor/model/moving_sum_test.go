@@ -5,7 +5,7 @@ import (
 )
 
 func NewMovingSumN(n int, window int) *MovingSum {
-	movingSum := NewMovingSum(window)
+	movingSum := NewMovingSum(int64(window))
 	for i := 1; i <= n; i++  {
 		movingSum.Add(float64(i))
 	}
