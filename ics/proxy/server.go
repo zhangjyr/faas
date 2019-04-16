@@ -20,6 +20,7 @@ type Server struct {
 	Verbose        bool
 	Debug          bool
 	ServingFeed    <-chan interface{}
+	ServedFeed     <-chan interface{}
 	Throttle       chan bool
 
 	mu             sync.RWMutex
@@ -32,6 +33,7 @@ type Server struct {
 	listening      chan struct{}
 	done           chan struct{}
 	servingFeed    channel.Channel
+	servedFeed     channel.Channel
 	remotePrimary  int
 	remoteSecondary int
 
@@ -76,6 +78,8 @@ func NewServer(port int, debug bool) *Server{
 	srv.done = make(chan struct{})
 	srv.servingFeed = flash.NewChannel()
 	srv.ServingFeed = srv.servingFeed.Out()
+	srv.servedFeed = flash.NewChannel()
+	srv.ServedFeed = srv.servedFeed.Out()
 	srv.Throttle = make(chan bool, 10)
 
 	return srv
@@ -373,7 +377,7 @@ func (srv *Server) packageMatcher(fconn *forwardConnection, inbound bool, b []by
 	switch method {
 	case "HTTP":
 		// Response
-		srv.countServed()
+		srv.onServe(fconn)
 	case "GET ":
 		// Reqeust
 		fallthrough
@@ -382,28 +386,19 @@ func (srv *Server) packageMatcher(fconn *forwardConnection, inbound bool, b []by
 	case "PUT ":
 		fallthrough
 	case "DELE":
-		srv.countRequested()
+		srv.onRequest(fconn)
 	}
 }
 
-func (srv *Server) countRequested() int32 {
+func (srv *Server) onRequest(fconn *forwardConnection) int32 {
 	requested := atomic.AddInt32(&srv.requested, 1)
 	srv.servingFeed.In() <- requested
-	srv.countServing(1, requested)
+	// fconn.markRequest("")
 	return requested
 }
 
-func (srv *Server) countServed() int32 {
+func (srv *Server) onServe(fconn *forwardConnection) int32 {
 	served := atomic.AddInt32(&srv.served, 1)
-	srv.countServing(-1, served)
+	// srv.servedFeed.In() <- fconn.markResponse("")
 	return served
-}
-
-func (srv *Server) countServing(diff int32, reference int32) int32 {
-	serving := atomic.AddInt32(&srv.serving, diff)
-	sumResponse := atomic.AddInt64(&srv.sumResponse, int64(-diff) * time.Since(srv.started).Nanoseconds())
-	if serving == 0 && diff < 0 && reference % 1000 == 0 { // reference: rate control
-		srv.log.Info("Mean server response time: %f", float64(sumResponse) / 1000000000.0 / float64(reference))
-	}
-	return serving
 }

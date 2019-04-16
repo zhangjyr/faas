@@ -31,6 +31,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/openfaas/faas/ics/logger"
 )
@@ -47,6 +48,7 @@ type forwardConnection struct {
 	traceFormat   string
 	mu            sync.Mutex
 	log           logger.ILogger
+	requested     time.Time
 
 	Matcher  func(*forwardConnection, bool, []byte)
 	Replacer func([]byte) []byte
@@ -176,10 +178,10 @@ func (fconn *forwardConnection) pipe(src io.Reader, dst io.Writer) {
 	for {
 		select {
 		case buff = <-ready:
-		// default:
-		// 	// Warn and wait
-		// 	fconn.log.Warn("It takes too long to call matcher")
-		// 	buff = <-ready
+		default:
+			// Warn and wait
+			fconn.log.Warn("It takes too long to call matcher")
+			buff = <-ready
 		}
 
 		n, readErr := src.Read(buff)
@@ -273,4 +275,12 @@ func (fconn *forwardConnection) rconnWriters() []io.Writer {
 	    rconns[i] = rconn.(io.Writer)
 	}
 	return rconns
+}
+
+func (fconn *forwardConnection) markRequest(id string) {
+	fconn.requested = time.Now()
+}
+
+func (fconn *forwardConnection) markResponse(id string) float64 {
+	return time.Since(fconn.requested).Seconds()
 }

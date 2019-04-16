@@ -59,7 +59,7 @@ func NewSumN2(n int, start int) Sumer {
 func TestValidity(t *testing.T) {
 	n := 10000
 	stats := NewLightStatsN(n)
-	time.Sleep(10 * timerInterval)
+	time.Sleep(1 * time.Second)
 	if stats.N() != int64(n) {
 		t.Logf("Wrong n on sequencial adding, want: %v, got: %v", n, stats.N())
 		t.Fail()
@@ -78,7 +78,7 @@ func TestValidity(t *testing.T) {
 	}
 
 	stats = NewLightStatsGON(n)
-	time.Sleep(10 * timerInterval)
+	time.Sleep(1 * time.Second)
 	if stats.N() != int64(n) {
 		t.Logf("Wrong n on concurrent adding, want: %v, got: %v", n, stats.N())
 		t.Fail()
@@ -129,7 +129,7 @@ func TestOverhead(t *testing.T) {
 	// 	ch <- i
 	// }
 	// cost := time.Since(start)
-	time.Sleep(10 * timerInterval)
+	time.Sleep(1 * time.Second)
 	cost := times[0].Sub(start).Seconds()
 	t.Logf("Testing overhead (Closing blocked channel): %f s", cost)
 	for i := n - slice; i <= n; i++ {

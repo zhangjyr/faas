@@ -249,9 +249,11 @@ func (stats *LightStats) calculate() {
 		defer stats.mu.Unlock()
 
 		if stats.changed != stats.updated {
-			stats.mean = stats.x.Sum() / stats.n.Sum()
-			stats.var2 = (stats.n.Sum() * stats.x2.Sum() - stats.x.Sum() * stats.x.Sum()) /
-				(stats.n.Sum() * (stats.n.Sum() - 1))
+			if stats.n.Sum() > 1 {
+				stats.mean = stats.x.Sum() / stats.n.Sum()
+				stats.var2 = (stats.n.Sum() * stats.x2.Sum() - stats.x.Sum() * stats.x.Sum()) /
+					(stats.n.Sum() * (stats.n.Sum() - 1))
+			}
 			stats.updated = stats.changed
 		}
 	}

@@ -104,7 +104,6 @@ func (ana *LinearAnalyser) Query(x float64) (float64, error) {
 		return 0.0, ErrUndeterminate
 	}
 	sample := ana.xSampler.MakeVariable(x, time.Now())
-	ana.log.Debug("%f", sample.Value / float64(sample.Time.Sub(ana.lastX.Time).Nanoseconds()) * ana.lastInterval)
 	estimate, err := ana.queryLocked(sample)
 	if err == nil && estimate > 2 {
 		ana.log.Warn("Unusal estimate:%f, x:%f, sample.x:%f, lastInterval:%f, x.duration:%d",
