@@ -1,0 +1,5 @@
+#!/bin/sh
+
+curl -X POST \
+  http://server:8079/_/unshare/$1 \
+  -H 'cache-control: no-cache'
