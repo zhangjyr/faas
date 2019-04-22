@@ -163,16 +163,15 @@ func (fconn *forwardConnection) pipe(src io.Reader, dst io.Writer) {
 
 	// Directional copy (64k buffer)
 	// Using double caching to buy time for matcher
-	buffs := [2][]byte{
-		make([]byte, 0xffff),
-		make([]byte, 0xffff)}
+	buffs := [5][]byte{}
 	len := len(buffs)
 	pivot := 0
 	ready := make(chan []byte, len)
 	// Fill channel with buffers, and later filling depends on matcher.
-	ready <- buffs[pivot]
-	pivot++
-	ready <- buffs[pivot]
+	for ; pivot < len; pivot++ {
+		buffs[pivot] = make([]byte, 0xffff)
+		ready <- buffs[pivot]
+	}
 
 	var buff []byte
 	for {

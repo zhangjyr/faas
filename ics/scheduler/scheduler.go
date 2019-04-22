@@ -136,10 +136,9 @@ func NewScheduler(cfg *config.WatchdogConfig, profiler func(string)) (*Scheduler
 	// cpuAnalyser.SetDebug(debug)
 	// ics.monitor.AddAnalyser(NameCPUAnalyser, cpuAnalyser)
 
-	// latencyReporter := monitor.NewLatencyReporter()
-	// latencyReporter.SetDebug(debug)
-	// go latencyReporter.PipeFrom(ics.Proxy.ServedFeed)
-	// ics.monitor.AddAnalyser(NameLatencyReporter, latencyReporter)
+	latencyReporter := monitor.NewLatencyReporter(ics.Proxy.ServedFeed)
+	latencyReporter.SetDebug(debug)
+	ics.monitor.AddAnalyser(NameLatencyReporter, latencyReporter)
 
 	ics.monitor.Start()
 	go func() {

@@ -8,7 +8,7 @@ import (
 )
 
 func NewLightStatsN(n int) *LightStats {
-	stats := NewLightStats()
+	stats := NewLightStats(1)
 	for i := 1; i <= n; i++  {
 		stats.Add(float64(i))
 	}
@@ -16,7 +16,7 @@ func NewLightStatsN(n int) *LightStats {
 }
 
 func NewLightStatsGON(n int) *LightStats {
-	stats := NewLightStats()
+	stats := NewLightStats(1)
 	for i := 1; i <= n; i++  {
 		go stats.Add(float64(i))
 	}
@@ -24,7 +24,7 @@ func NewLightStatsGON(n int) *LightStats {
 }
 
 func NewLightStatsCHN(n int, slice int) (*LightStats, chan int, []time.Time) {
-	stats := NewLightStats()
+	stats := NewLightStats(1)
 	ch := make(chan int, n)
 	times := make([]time.Time, n + 1)
 	for i := 1; i <= slice; i++  {
@@ -57,7 +57,7 @@ func NewSumN2(n int, start int) Sumer {
 }
 
 func TestValidity(t *testing.T) {
-	n := 10000
+	n := 10
 	stats := NewLightStatsN(n)
 	time.Sleep(1 * time.Second)
 	if stats.N() != int64(n) {
@@ -98,7 +98,7 @@ func TestValidity(t *testing.T) {
 }
 
 func TestOverhead(t *testing.T) {
-	n := 20000
+	n := 20
 	slice := runtime.NumGoroutine() - 1
 	if slice < 1 {
 		slice = 1

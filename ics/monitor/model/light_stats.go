@@ -1,17 +1,18 @@
 package model
 
 import (
-	// "log"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
+	"log"
 )
 
 const SwapOnTimeout = 0
 const SwapOnFull = 1
 
 const len_buffers = 2
-const buffer_size int64 = 10000
+const buffer_size int64 = 1000
 
 var (
 	timerInterval time.Duration = 1 * time.Millisecond
@@ -22,10 +23,20 @@ var (
 )
 
 type lightStatsSafeBucket struct {
-	n        int64
-	filled   uint64
-	sum      int64
-	sum2     int64
+	expander  float64
+	expander2 float64
+	n         int64
+	filled    uint64
+	sum       int64
+	sum2      int64
+}
+
+func (bucket *lightStatsSafeBucket) setPrecision(p float64) {
+	if p == 0.0 {
+		p = 1.0
+	}
+	bucket.expander = 1.0 / p
+	bucket.expander2 = bucket.expander * bucket.expander
 }
 
 func (bucket *lightStatsSafeBucket) add(val float64) bool {
@@ -38,8 +49,8 @@ func (bucket *lightStatsSafeBucket) add(val float64) bool {
 	}
 
 	// Add up and flag slot as filled.
-	atomic.AddInt64(&bucket.sum, int64(val * 1e9))
-	atomic.AddInt64(&bucket.sum2, int64(val * val * 1e18))
+	atomic.AddInt64(&bucket.sum, int64(val * bucket.expander))
+	atomic.AddInt64(&bucket.sum2, int64((val * bucket.expander) * (val * bucket.expander)))
 	atomic.AddUint64(&bucket.filled, 0x0001 << (uint64(slot) - 1))
 	return true
 }
@@ -56,7 +67,7 @@ func (bucket *lightStatsSafeBucket) load() (int64, float64, float64) {
 	if n > buffer_size {
 		n = buffer_size
 	}
-	return n, float64(bucket.sum) / 1e9, float64(bucket.sum2) / 1e18
+	return n, float64(bucket.sum) / bucket.expander, float64(bucket.sum2) / bucket.expander2
 }
 
 func (bucket *lightStatsSafeBucket) reset() {
@@ -67,9 +78,13 @@ func (bucket *lightStatsSafeBucket) reset() {
 }
 
 type lightStatsBucket struct {
-	n        int64
-	sum      float64
-	sum2     float64
+	n         int64
+	sum       float64
+	sum2      float64
+}
+
+func (bucket *lightStatsBucket) setPrecision(p float64) {
+	// do nothing
 }
 
 func (bucket *lightStatsBucket) add(val float64) bool {
@@ -103,10 +118,11 @@ type LightStats struct {
 	OnFailToSwap func(int)
 
 	window   int64
+	precision float64
 	n        Sumer
 	x        Sumer
 	x2       Sumer
-	buffers  [len_buffers]lightStatsBucket
+	buffers  [len_buffers]*lightStatsBucket
 	active   int32
 	mean     float64
 	var2     float64
@@ -115,41 +131,40 @@ type LightStats struct {
 	timer    *time.Timer
 	mu       sync.RWMutex
 	closed   chan struct{}
-	readable chan float64
+	readable chan interface{}
 	flushable chan struct{}
 }
 
-func NewLightStats() *LightStats {
+func NewLightStats(precision float64) *LightStats {
 	stats := &LightStats{
+		precision: precision,
 		n: NewSum(),
 		x: NewSum(),
 		x2 : NewSum(),
-		closed: make(chan struct{}),
-		readable: make(chan float64, len_buffers * buffer_size),
-		flushable: make(chan struct{}, len_buffers),
 	}
-	for i := 1; i < len_buffers; i++ {
-		stats.flushable <- struct{}{}
-	}
-	go stats.initTimer()
+	stats.init()
 	return stats
 }
 
-func NewMovingLightStats(window int64) *LightStats {
+func NewMovingLightStats(precision float64, window int64) *LightStats {
 	stats := &LightStats{
 		window : window,
+		precision: precision,
 		n: NewMovingSum(window),
 		x: NewMovingSum(window),
 		x2 : NewMovingSum(window),
-		closed: make(chan struct{}),
 	}
-	go stats.initTimer()
+	stats.init()
 	return stats
 }
 
 func (stats *LightStats) Add(val float64) {
 	stats.readable <- val
 	// stats.add(val)
+}
+
+func (stats *LightStats) ChanAdd() chan<- interface{} {
+	return stats.readable
 }
 
 func (stats *LightStats) N() int64 {
@@ -186,13 +201,27 @@ func (stats *LightStats) Close() {
 	}
 }
 
+func (stats *LightStats) init() {
+	stats.closed = make(chan struct{})
+	stats.readable = make(chan interface{}, len_buffers * buffer_size)
+	stats.flushable = make(chan struct{}, len_buffers)
+	stats.buffers[0] = &lightStatsBucket{}
+	stats.buffers[0].setPrecision(stats.precision)
+	for i := 1; i < len_buffers; i++ {
+		stats.buffers[i] = &lightStatsBucket{}
+		stats.buffers[i].setPrecision(stats.precision)
+		stats.flushable <- struct{}{}
+	}
+	go stats.initTimer()
+}
+
 func (stats *LightStats) add(val float64) {
-	active := atomic.LoadInt32(&stats.active)
-	// active := stats.active
+	// active := atomic.LoadInt32(&stats.active)
+	active := stats.active
 	for !stats.buffers[active % len_buffers].add(val) {
 		stats.swap(active, SwapOnFull)
-		active = atomic.LoadInt32(&stats.active)
-		// active = stats.active
+		// active = atomic.LoadInt32(&stats.active)
+		active = stats.active
 	}
 }
 
@@ -205,20 +234,21 @@ func (stats *LightStats) swap(active int32, full int) bool {
 		}
 		<- stats.flushable
 	}
-	if !atomic.CompareAndSwapInt32(&stats.active, active, active + 1) {
-		if stats.OnFailToSwap != nil {
-			stats.OnFailToSwap(full)
-		}
-		return false
-	}
-	// stats.active = active + 1
+	// if !atomic.CompareAndSwapInt32(&stats.active, active, active + 1) {
+	// 	if stats.OnFailToSwap != nil {
+	// 		stats.OnFailToSwap(full)
+	// 	}
+	// 	return false
+	// }
+	stats.active = active + 1
+	// log.Printf("swap to %v", active + 1)
 
 	go stats.flush(active, full)
 	return true
 }
 
 func (stats *LightStats) flush(active int32, full int) {
-	flushing := &stats.buffers[active % len_buffers];
+	flushing := stats.buffers[active % len_buffers];
 	n, x, x2 := flushing.n, 0.0, 0.0
 
 	if n > 0 {
@@ -226,14 +256,24 @@ func (stats *LightStats) flush(active int32, full int) {
 			time.Sleep(1 * time.Millisecond)
 		}
 
-		stats.mu.Lock()
-		defer stats.mu.Unlock()
 		n, x, x2 = flushing.load()
+		stats.mu.Lock()
 		stats.n.Add(float64(n))
 		stats.x.Add(x)
 		stats.x2.Add(x2)
-		flushing.reset()
 		stats.changed = time.Now()
+		stats.mu.Unlock()
+		flushing.reset()
+	} else if stats.n.Sum() > 0 {
+		stats.mu.Lock()
+		// No need to check again. This is the only place we update stats, and we need to avoid reading on writing.
+		stats.n.Add(0.0)
+		stats.x.Add(0.0)
+		stats.x2.Add(0.0)
+		if stats.n.Sum() < 1 {
+			stats.changed = time.Now()
+		}
+		stats.mu.Unlock()
 	}
 
 	if stats.OnSwap != nil {
@@ -253,6 +293,9 @@ func (stats *LightStats) calculate() {
 				stats.mean = stats.x.Sum() / stats.n.Sum()
 				stats.var2 = (stats.n.Sum() * stats.x2.Sum() - stats.x.Sum() * stats.x.Sum()) /
 					(stats.n.Sum() * (stats.n.Sum() - 1))
+			} else {
+				stats.mean = 0.0
+				stats.var2 = 0.0
 			}
 			stats.updated = stats.changed
 		}
@@ -264,13 +307,17 @@ func (stats *LightStats) initTimer() {
 	defer stats.timer.Stop()
 	for {
 		select {
-		case <-stats.closed:
-			// Stop monitoring when signaled.
-			return
 		case <-stats.timer.C:
+			// For efficiency, we check control signal on timeout only.
+			select {
+			case <-stats.closed:
+				// Stop monitoring when signaled.
+				return
+			default:
+			}
 			stats.swap(stats.active, SwapOnTimeout)
 		case val := <-stats.readable:
-			stats.add(val)
+			stats.add(val.(float64))
 		}
 	}
 }

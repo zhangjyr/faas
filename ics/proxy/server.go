@@ -19,8 +19,8 @@ type Server struct {
 	Addr           string // TCP address to listen on
 	Verbose        bool
 	Debug          bool
-	ServingFeed    <-chan interface{}
-	ServedFeed     <-chan interface{}
+	ServingFeed    channel.Out
+	ServedFeed     channel.Out
 	Throttle       chan bool
 
 	mu             sync.RWMutex
@@ -77,9 +77,9 @@ func NewServer(port int, debug bool) *Server{
 	srv.activeConn = make(map[*forwardConnection]struct{})
 	srv.done = make(chan struct{})
 	srv.servingFeed = flash.NewChannel()
-	srv.ServingFeed = srv.servingFeed.Out()
+	srv.ServingFeed = srv.servingFeed
 	srv.servedFeed = flash.NewChannel()
-	srv.ServedFeed = srv.servedFeed.Out()
+	srv.ServedFeed = srv.servedFeed
 	srv.Throttle = make(chan bool, 10)
 
 	return srv
@@ -393,12 +393,12 @@ func (srv *Server) packageMatcher(fconn *forwardConnection, inbound bool, b []by
 func (srv *Server) onRequest(fconn *forwardConnection) int32 {
 	requested := atomic.AddInt32(&srv.requested, 1)
 	srv.servingFeed.In() <- requested
-	// fconn.markRequest("")
+	fconn.markRequest("")
 	return requested
 }
 
 func (srv *Server) onServe(fconn *forwardConnection) int32 {
 	served := atomic.AddInt32(&srv.served, 1)
-	// srv.servedFeed.In() <- fconn.markResponse("")
+	srv.servedFeed.In() <- fconn.markResponse("")
 	return served
 }

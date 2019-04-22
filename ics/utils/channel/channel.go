@@ -1,9 +1,21 @@
 package channel
 
-type Channel interface {
-	In() chan<- interface{}
-
+type Out interface {
 	Out() <-chan interface{}
+
+	Pipe(chan<- interface{})
+
+	StopPipe()
+}
+
+type In interface {
+	In() chan<- interface{}
+}
+
+type Channel interface {
+	In
+
+	Out
 
 	Close()
 }

@@ -5,29 +5,35 @@ import (
 
 	"github.com/openfaas/faas/ics/monitor/model"
 	"github.com/openfaas/faas/ics/logger"
+	"github.com/openfaas/faas/ics/utils/channel"
 )
 
 type LatencyReporter struct {
-	log                    logger.ILogger
-	pause                  bool
-	stats                  *model.LightStats
+	log        logger.ILogger
+	stats      *model.LightStats
+	feed       channel.Out
 }
 
-func NewLatencyReporter() *LatencyReporter {
+func NewLatencyReporter(feed channel.Out) *LatencyReporter {
 	ana := &LatencyReporter{
-		pause: true,
-		stats: model.NewMovingLightStats(60), // 60s
+		log: logger.NilLogger,
+		stats: model.NewMovingLightStats(1, 10), // 10ms
+		feed: feed,
 	}
 	return ana
 }
 
 func (ana *LatencyReporter) Start() error {
-	ana.pause = false
+	if ana.feed != nil {
+		ana.feed.Pipe(ana.stats.ChanAdd())
+	}
 	return nil
 }
 
 func (ana *LatencyReporter) Stop() error {
-	ana.pause = true
+	if ana.feed != nil {
+		ana.feed.StopPipe()
+	}
 	return nil
 }
 
@@ -39,21 +45,17 @@ func (ana *LatencyReporter) SetDebug(debug bool) {
 			Color:       true,
 		}
 	} else {
-		ana.log = nil
+		ana.log = logger.NilLogger
 	}
 }
 
-func (ana *LatencyReporter) PipeFrom(feed <-chan interface{}) {
-	for i := range feed {
-		if !ana.pause {
-			ana.stats.Add(i.(float64))
-		}
-	}
+func (ana *LatencyReporter) PipeFrom(feed channel.Out) {
+	ana.feed = feed
 }
 
 func (ana *LatencyReporter) Analyse(event *ResourceEvent) error {
-	_, mean, var2 := ana.stats.NMeanVar2()
-	if ana.log != nil {
+	if ana.log != logger.NilLogger {
+		_, mean, var2 := ana.stats.NMeanVar2()
 		ana.log.Debug("Worker latency mean:%f var:%f", mean, math.Sqrt(var2))
 	}
 

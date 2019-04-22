@@ -1,0 +1,14 @@
+#!/bin/sh
+
+PWD=`dirname $0`
+
+$PWD/swap benchmark_cpu
+$PWD/../bin/go-wrk -d 20 -c 1 -H "X-FUNCTION: benchmark_cpu" http://server:8080/
+$PWD/../bin/go-wrk -d 10 -c 2 -H "X-FUNCTION: benchmark_cpu" http://server:8080/
+$PWD/../bin/go-wrk -d 20 -c 1 -H "X-FUNCTION: benchmark_cpu" http://server:8080/
+$PWD/../bin/go-wrk -d 1 -c 2 -H "X-FUNCTION: benchmark_cpu" http://server:8080/
+$PWD/../bin/go-wrk -d 20 -c 1 -H "X-FUNCTION: benchmark_cpu" http://server:8080/
+$PWD/../bin/go-wrk -d 1 -c 4 -H "X-FUNCTION: benchmark_cpu" http://server:8080/
+$PWD/../bin/go-wrk -d 20 -c 1 -H "X-FUNCTION: benchmark_cpu" http://server:8080/
+$PWD/../bin/go-wrk -d 1 -c 8 -H "X-FUNCTION: benchmark_cpu" http://server:8080/
+$PWD/../bin/go-wrk -d 20 -c 1 -H "X-FUNCTION: benchmark_cpu" http://server:8080/

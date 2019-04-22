@@ -3,6 +3,7 @@ package flash
 type channel struct {
 	in      chan interface{}
 	out     chan interface{}
+	pipe    chan<- interface{}	// Being initialized with out, it can be overrided.
 }
 
 func NewChannel() *channel {
@@ -14,15 +15,13 @@ func NewChannel() *channel {
 	return c
 }
 
-func (c *channel) channel() {
-	for i := range c.in {
-		select {
-		case c.out <- i:
-		default:
-			// if out is not consumed, consume it and move on
-		}
+func NewBufferChannel(size int) *channel {
+	c := &channel{
+		in: make(chan interface{}),
+		out: make(chan interface{}, size),
 	}
-	close(c.out)
+	go c.channel()
+	return c
 }
 
 func (c *channel) In() chan<- interface{} {
@@ -33,6 +32,26 @@ func (c *channel) Out() <-chan interface{} {
 	return c.out
 }
 
+func (c *channel) Pipe(pipeout chan<- interface{}) {
+	c.pipe = pipeout
+}
+
+func (c *channel) StopPipe() {
+	c.pipe = c.out
+}
+
 func (c *channel) Close() {
 	close(c.in)
+}
+
+func (c *channel) channel() {
+	c.pipe = c.out
+	for i := range c.in {
+		select {
+		case c.pipe <- i:
+		default:
+			// if out is not consumed, consume it and move on
+		}
+	}
+	close(c.out)
 }

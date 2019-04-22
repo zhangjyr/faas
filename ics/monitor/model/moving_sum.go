@@ -22,14 +22,11 @@ func (sum *MovingSum) Add(val float64) {
 	// Move forward.
 	sum.last = (sum.last + 1) % sum.window
 
-	// Substract last value.
-	sum.sum -= sum.values[sum.last]
+	// Add difference to sum.
+	sum.sum += val - sum.values[sum.last]
 
 	// Record history value
 	sum.values[sum.last] = val
-
-	// Add val to sum
-	sum.sum += val
 
 	// update length
 	if sum.n < sum.window {
