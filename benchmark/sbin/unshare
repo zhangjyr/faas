@@ -1,5 +1,9 @@
 #!/bin/sh
 
 curl -X POST \
+<<<<<<< HEAD
+  http://server:8079/_/unshare/$1 \
+=======
   http://server:8079/_/unshare/ \
+>>>>>>> 1f7e5b04ab388643a043e13ee10fbe620b74b887
   -H 'cache-control: no-cache'
