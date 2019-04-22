@@ -1,4 +1,4 @@
-version: '2'
+version: '2.1'
 services:
   ics:
     image: zhangjyr/nodejsenv:b1
@@ -10,6 +10,10 @@ services:
      - profile=/profile.log
      - faas=hello
     restart: always
+    sysctls:
+     - net.core.somaxconn=2048
+    cpu_period: 100000
+    cpu_quota: 100000
   env:
     image: zhangjyr/nodejsenv:b1
     container_name: nodejsenv

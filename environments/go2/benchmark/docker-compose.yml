@@ -1,0 +1,23 @@
+version: '2.1'
+services:
+  ics:
+    image: zhangjyr/go2env:b1
+    container_name: go2ics
+    ports:
+     - "8080:8080"
+     - "8079:8079"
+    environment:
+     - profile=/profile.log
+     - faas=hello
+    restart: always
+    sysctls:
+     - net.core.somaxconn=1024
+    cpu_period: 100000
+    cpu_quota: 100000
+  env:
+    image: zhangjyr/go2env:b1
+    container_name: go2env
+    ports:
+     - "8081:8080"
+    command: /server -port 8080 -specialize hello
+    restart: always

@@ -22,7 +22,8 @@ import (
 	"github.com/openfaas/faas/ics/types"
 	"github.com/openfaas/faas/ics/proxy"
 	"github.com/openfaas/faas/ics/monitor"
-	"github.com/openfaas/faas/ics/monitor/sampler"
+//	"github.com/openfaas/faas/ics/monitor/sampler"
+//	"github.com/openfaas/faas/ics/monitor/model"
 )
 
 var ErrSpecialization = errors.New("Scheduler: Failed to specialize environment")
@@ -32,7 +33,8 @@ var ErrUnregistered = errors.New("Scheduler: Unregistered environment")
 var ErrStatusTransition = errors.New("SchedulerStatus: Failed to transit")
 var ErrStatusPendding = errors.New("SchedulerStatus: Pendding and wait for transition")
 
-var NameCPUAnalyser = "cpu"
+const NameCPUAnalyser = "cpu"
+const NameLatencyReporter = "latency"
 
 type FaasEnvironment struct {
 	cmd         *exec.Cmd
@@ -128,18 +130,23 @@ func NewScheduler(cfg *config.WatchdogConfig, profiler func(string)) (*Scheduler
 		monitor: monitor.NewIntervalMonitor(nil),
 	}
 
-	cpuAnalyser := monitor.NewLinearAnalyser(
-		sampler.CPUUsageSamplerInstance(),
-		sampler.NewRequestSampler(ics.Proxy))
-	cpuAnalyser.SetDebug(debug)
+	// cpuAnalyser := monitor.NewLinearAnalyser(
+	// 	sampler.CPUUsageSamplerInstance(),
+	// 	sampler.NewRequestSampler(ics.Proxy))
+	// cpuAnalyser.SetDebug(debug)
+	// ics.monitor.AddAnalyser(NameCPUAnalyser, cpuAnalyser)
 
-	ics.monitor.AddAnalyser(NameCPUAnalyser, cpuAnalyser)
+	// latencyReporter := monitor.NewLatencyReporter()
+	// latencyReporter.SetDebug(debug)
+	// go latencyReporter.PipeFrom(ics.Proxy.ServedFeed)
+	// ics.monitor.AddAnalyser(NameLatencyReporter, latencyReporter)
+
 	ics.monitor.Start()
 	go func() {
 		for {
 			select {
-			case serving := <-ics.Proxy.ServingFeed:
-				ics.servingHandler(serving.(int32))
+			// case serving := <-ics.Proxy.ServingFeed:
+			// 	ics.servingHandler(serving.(int32))
 			case err := <-ics.monitor.Error():
 				log.Printf("Error while monitor resources: %v\n", err)
 			}

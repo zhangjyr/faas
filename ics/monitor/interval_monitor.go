@@ -115,7 +115,7 @@ func (im *IntervalMonitor) monitor() {
 		for name, analyser := range im.monitored {
 			go func() {
 				tick := time.Now()
-				err := analyser.Sample(&ResourceEvent{
+				err := analyser.Analyse(&ResourceEvent{
 					Name: name,
 					Time: tick,
 				})
@@ -131,7 +131,7 @@ func (im *IntervalMonitor) monitor() {
 		}
 		im.lastTick = start
 
-		// Stop and drain the timer to be accurate and safe to reset.
+		// Drain the timer to be accurate and safe to reset.
 		if !timer.Stop() {
 			select {
 			case <-timer.C:

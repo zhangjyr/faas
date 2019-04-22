@@ -31,6 +31,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/openfaas/faas/ics/logger"
 )
@@ -46,13 +47,14 @@ type forwardConnection struct {
 	closed        chan bool
 	traceFormat   string
 	mu            sync.Mutex
+	log           logger.ILogger
+	requested     time.Time
 
 	Matcher  func(*forwardConnection, bool, []byte)
 	Replacer func([]byte) []byte
 
 	// Settings
 	Nagles    bool
-	Log       logger.ILogger
 	Debug     bool
 	Binary    bool
 }
@@ -66,7 +68,7 @@ func newForwardConnection(lconn *net.TCPConn, laddr *net.TCPAddr, raddrs []*net.
 		rconns: make([]io.ReadWriteCloser, len(raddrs)),
 		raddrs: raddrs,
 		closed: make(chan bool),
-		Log:    &logger.NilLogger{},
+		log:    logger.NilLogger,
 	}
 }
 
@@ -81,7 +83,7 @@ func (fconn *forwardConnection) forward(srv *Server) {
 	for i, raddr := range fconn.raddrs {
 		fconn.rconns[i], err = net.DialTCP("tcp", nil, raddr)
 		if err != nil {
-			fconn.Log.Warn("Remote connection failed: %s", err)
+			fconn.log.Warn("Remote connection failed: %s", err)
 			return
 		}
 		defer fconn.rconns[i].Close()
@@ -102,7 +104,7 @@ func (fconn *forwardConnection) forward(srv *Server) {
 
 	// Display both ends
 	for _, raddr := range fconn.raddrs {
-		fconn.Log.Info("Opened %s >>> %s", fconn.laddr.String(), raddr.String())
+		fconn.log.Info("Opened %s >>> %s", fconn.laddr.String(), raddr.String())
 	}
 
 	// Reset format for trace
@@ -124,7 +126,7 @@ func (fconn *forwardConnection) forward(srv *Server) {
 
 	// Wait for close...
 	<-fconn.closed
-	fconn.Log.Info("Closed (%d bytes sent, %d bytes recieved)", fconn.sentBytes, fconn.receivedBytes)
+	fconn.log.Info("Closed (%d bytes sent, %d bytes recieved)", fconn.sentBytes, fconn.receivedBytes)
 	srv.trackConn(fconn, false)
 }
 
@@ -148,9 +150,9 @@ func (fconn *forwardConnection) isClosed() <-chan bool {
 
 func (fconn *forwardConnection) err(s string, err error) {
 	if err != io.EOF {
-		fconn.Log.Warn(s, err)
+		fconn.log.Warn(s, err)
 	} else {
-		fconn.Log.Debug(s, err)
+		fconn.log.Debug(s, err)
 	}
 
 	fconn.close()
@@ -176,10 +178,10 @@ func (fconn *forwardConnection) pipe(src io.Reader, dst io.Writer) {
 	for {
 		select {
 		case buff = <-ready:
-		// default:
-		// 	// Warn and wait
-		// 	fconn.Log.Warn("It takes too long to call matcher")
-		// 	buff = <-ready
+		default:
+			// Warn and wait
+			fconn.log.Warn("It takes too long to call matcher")
+			buff = <-ready
 		}
 
 		n, readErr := src.Read(buff)
@@ -251,11 +253,11 @@ func (fconn *forwardConnection) trace(islocal bool, bytes []byte, len int) {
 	}
 
 	if islocal {
-		fconn.Log.Debug(">>> %d bytes sent", len)
-		fconn.Log.Trace(fconn.traceFormat, bytes)
+		fconn.log.Debug(">>> %d bytes sent", len)
+		fconn.log.Trace(fconn.traceFormat, bytes)
 	} else {
-		fconn.Log.Debug("<<< %d bytes recieved", len)
-		fconn.Log.Trace(fconn.traceFormat, bytes)
+		fconn.log.Debug("<<< %d bytes recieved", len)
+		fconn.log.Trace(fconn.traceFormat, bytes)
 	}
 }
 
@@ -273,4 +275,12 @@ func (fconn *forwardConnection) rconnWriters() []io.Writer {
 	    rconns[i] = rconn.(io.Writer)
 	}
 	return rconns
+}
+
+func (fconn *forwardConnection) markRequest(id string) {
+	fconn.requested = time.Now()
+}
+
+func (fconn *forwardConnection) markResponse(id string) float64 {
+	return time.Since(fconn.requested).Seconds()
 }

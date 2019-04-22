@@ -2,6 +2,8 @@ package logger
 
 import (
 	"fmt"
+	"log"
+	"strings"
 
 	"github.com/mgutz/ansi"
 )
@@ -19,7 +21,7 @@ func (logger *ColorLogger) Trace(format string, args ...interface{}) {
 	if !logger.Verbose {
 		return
 	}
-	logger.log("lightgrey", format, args...)
+	logger.log("blue", format, args...)
 }
 
 // Debug - Log a debug message
@@ -56,8 +58,14 @@ func (logger *ColorLogger) Error(format string, args ...interface{}) {
 
 
 func (logger *ColorLogger) log(color, format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
 	if logger.Color && color != "" {
-		format = ansi.Color(format, color)
+		lines := strings.Split(msg, "\n")
+		for i, _ := range(lines) {
+			lines[i] = ansi.Color(lines[i], color)
+		}
+		msg = strings.Join(lines, "\n")
 	}
-	fmt.Printf(fmt.Sprintf("%s%s\n", logger.Prefix, format), args...)
+
+	log.Println(logger.Prefix + msg)
 }

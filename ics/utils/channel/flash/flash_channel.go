@@ -18,10 +18,8 @@ func (c *channel) channel() {
 	for i := range c.in {
 		select {
 		case c.out <- i:
-		// default:
-		// 	// if out is not consumed, consume it and move on
-		// 	<-c.out
-		// 	c.out <- i
+		default:
+			// if out is not consumed, consume it and move on
 		}
 	}
 	close(c.out)

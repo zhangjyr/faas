@@ -15,63 +15,46 @@ type multiret struct {
 
 type multiReader struct {
 	readers   []io.Reader
-	readings  []bool
 }
 
-func (mr *multiReader) readFrom(idx int, p []byte, done chan multiret) {
+func (mr *multiReader) readFrom(reader io.Reader, idx int, p []byte, done chan multiret) {
 	ret := multiret{
 		from: idx,
 	}
-	ret.n, ret.err = mr.readers[idx].Read(p)
+	ret.n, ret.err = reader.Read(p)
 	done <-ret
 }
 
-// func (mr *multiReader) Read(p []byte) (n int, err error) {
-// 	done := make(chan multiret)
-// 	for i, _ := range mr.readers {
-// 		if mr.readings[i] == false {
-// 			go mr.readFrom(i, p, done)
-// 			mr.readings[i] = true
-// 		}
-// 	}
-//
-// 	ret := <- done
-// 	mr.readings[ret.from] = false
-// 	return ret.n, ret.err
-// }
 func (mr *multiReader) Read(p []byte) (n int, err error) {
 	if len(mr.readers) == 1 {
 		return mr.readers[0].Read(p)
 	}
 
-	dones := make([]chan multiret, len(mr.readers))
-	dps := make([][]byte, len(mr.readers))
-	for i, _ := range mr.readers {
-		dp := make([]byte, len(p))
-		done := make(chan multiret)
-		go mr.readFrom(i, dp, done)
-		dones[i] = done
-		dps[i] = dp
+	lr := len(mr.readers)
+	lp := len(p)
+	done := make(chan multiret, lr)
+	ps := make([]byte, lp * lr)
+	for i, reader := range mr.readers {
+		go mr.readFrom(reader, i, ps[(i * lp):(i * lp + lp)], done)
 	}
 
 	// Only one reader may return result, EOF or err for others
-	for i, done := range dones{
+	for i := 0; i < len(mr.readers); i++ {
 		ret := <-done
 		n, err = ret.n, ret.err
 		if err == nil {
-			mr.readers = mr.readers[i:i+1]
-			copy(p, dps[i])
+			mr.readers = mr.readers[ret.from:ret.from + 1]
+			copy(p, ps[(ret.from * lp):(ret.from * lp + lp)])
 			break
 		}
 	}
 	// All err
-	if len(mr.readers) > 1 {
-		copy(p, dps[len(mr.readers) - 1])
+	if err != nil {
+		copy(p, ps[(lr * lp - lp):])
 	}
 
 	return n, err
 }
-
 
 // MultiReader returns a Reader that read from one of
 // the provided input readers. Once any inputs have returned EOF or error,
@@ -81,7 +64,6 @@ func MultiReader(readers ...io.Reader) io.Reader {
 	copy(r, readers)
 	return &multiReader{
 		readers: r,
-		readings: make([]bool, len(readers)),
 	}
 }
 
@@ -89,11 +71,11 @@ type multiWriter struct {
 	writers   []io.Writer
 }
 
-func (mw *multiWriter) writeTo(idx int, p []byte, done chan multiret) {
+func (mw *multiWriter) writeTo(writer io.Writer, idx int, p []byte, done chan multiret) {
 	ret := multiret{
 		from: idx,
 	}
-	ret.n, ret.err = mw.writers[idx].Write(p)
+	ret.n, ret.err = writer.Write(p)
 	done <-ret
 }
 
@@ -102,15 +84,13 @@ func (mw *multiWriter) Write(p []byte) (n int, err error) {
 		return mw.writers[0].Write(p)
 	}
 
-	dones := make([]chan multiret, len(mw.writers))
-	for i, _ := range mw.writers {
-		done := make(chan multiret)
-		go mw.writeTo(i, p, done)
-		dones[i] = done
+	done := make(chan multiret, len(mw.writers))
+	for i, writer := range mw.writers {
+		go mw.writeTo(writer, i, p, done)
 	}
 
 	succeeded := len(mw.writers)
-	for i, done := range dones{
+	for i := 0; i < len(mw.writers); i++ {
 		ret := <-done
 		// Short write
 		if ret.err == nil && ret.n != len(p) {
@@ -122,7 +102,7 @@ func (mw *multiWriter) Write(p []byte) (n int, err error) {
 			n, err = ret.n, ret.err
 		} else {
 			succeeded -= 1
-			mw.writers[i] = nil
+			mw.writers[ret.from] = nil
 		}
 	}
 	if succeeded == 0 {

@@ -3,7 +3,6 @@ package proxy
 import (
 	"fmt"
 	"errors"
-	"log"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -21,9 +20,11 @@ type Server struct {
 	Verbose        bool
 	Debug          bool
 	ServingFeed    <-chan interface{}
+	ServedFeed     <-chan interface{}
 	Throttle       chan bool
 
 	mu             sync.RWMutex
+	log            logger.ILogger
 	remoteids      [REMOTE_TOTAL]int
 	remotes        [REMOTE_TOTAL]*net.TCPAddr
 	listener       *net.TCPListener
@@ -31,7 +32,8 @@ type Server struct {
 	connid         uint64
 	listening      chan struct{}
 	done           chan struct{}
-	servingFeed        channel.Channel
+	servingFeed    channel.Channel
+	servedFeed     channel.Channel
 	remotePrimary  int
 	remoteSecondary int
 
@@ -59,13 +61,25 @@ var ErrServerListening = errors.New("proxy: Server is listening")
 func NewServer(port int, debug bool) *Server{
 	srv := &Server{
 		Addr:       fmt.Sprintf(":%d", port),
-		Verbose:    debug,
+		Verbose:    false,
 		Debug:      debug,
+	}
+	if (debug) {
+		srv.log = &logger.ColorLogger{
+			Verbose:     srv.Verbose,
+			Level:       srv.getLoggerLevel(),
+			Prefix:      "Proxy server ",
+			Color:       true,
+		}
+	} else {
+		srv.log = logger.NilLogger
 	}
 	srv.activeConn = make(map[*forwardConnection]struct{})
 	srv.done = make(chan struct{})
 	srv.servingFeed = flash.NewChannel()
 	srv.ServingFeed = srv.servingFeed.Out()
+	srv.servedFeed = flash.NewChannel()
+	srv.ServedFeed = srv.servedFeed.Out()
 	srv.Throttle = make(chan bool, 10)
 
 	return srv
@@ -90,6 +104,9 @@ func (srv *Server) Listen() (*net.TCPListener, error) {
 	srv.remotePrimary = 0
 	srv.remoteSecondary = 1
 	srv.listener, err = net.ListenTCP("tcp", laddr)
+	if err == nil {
+		srv.log.Info("ICS Listening on %s", srv.Addr)
+	}
 	srv.started = time.Now()
 	return srv.listener, err
 }
@@ -114,66 +131,63 @@ func (srv *Server) ListenAndProxy(id int, remoteAddr string, onProxy func(int)) 
 
 	// throttling := false
 	for {
-		buffconn, err := listener.AcceptTCP()
+		conn, err := listener.AcceptTCP()
 		if err != nil {
 			select {
 			case <-srv.isDone():
 				return ErrServerClosed
 			default:
 			}
-			log.Printf("Failed to accept connection '%s'\n", err)
+			srv.log.Error("Failed to accept connection '%s'\n", err)
 			continue
 		}
 		srv.connid++
+		srv.log.Info("Connection accepted: %03d", srv.connid)
 
-		conn := buffconn
-		go func() {
-			defer  conn.Close()
+		go func(conn *net.TCPConn, connid uint64) {
+			defer conn.Close()
 
-			select {
-			case <-srv.Throttle:
-				return
-			// case throttle := <-srv.Throttle:
-			// 	if throttle {
-			// 		buffconn.Close()
-			// 	}
-			// 	if throttling != throttle {
-			// 		if throttle {
-			// 			log.Printf("Server: start throttling...")
-			// 		} else {
-			// 			log.Printf("Server: end throttling.")
-			// 		}
-			// 		// throttling = throttle
-			// 	}
-			// 	continue
-			default:
-				// if throttling {
-				// 	log.Printf("Server: close connection.")
-				// 	buffconn.Close()
-				// 	continue
-				// }
-			}
+			// select {
+			// case <-srv.Throttle:
+			// 	return
+			// // case throttle := <-srv.Throttle:
+			// // 	if throttle {
+			// // 		buffconn.Close()
+			// // 	}
+			// // 	if throttling != throttle {
+			// // 		if throttle {
+			// // 			srv.log.Debug("start throttling...")
+			// // 		} else {
+			// // 			srv.log.Debug("end throttling.")
+			// // 		}
+			// // 		// throttling = throttle
+			// // 	}
+			// // 	continue
+			// default:
+			// 	// if throttling {
+			// 	// 	srv.log.Debug("close connection.")
+			// 	// 	buffconn.Close()
+			// 	// 	continue
+			// 	// }
+			// }
 
-			logLevel := logger.LOG_LEVEL_WARN
-			if srv.Debug {
-				logLevel = logger.LOG_LEVEL_ALL
-			}
+
 
 			var fconn *forwardConnection
 			_, addrs := srv.getRemoteAddr()
 			fconn = newForwardConnection(conn, listener.Addr().(*net.TCPAddr), addrs)
 			fconn.Debug = srv.Debug
 			fconn.Nagles = true
-			fconn.Log = &logger.ColorLogger{
+			fconn.log = &logger.ColorLogger{
 				Verbose:     srv.Verbose,
-				Level:       logLevel,
-				Prefix:      fmt.Sprintf("Connection #%03d ", srv.connid),
+				Level:       srv.getLoggerLevel(),
+				Prefix:      fmt.Sprintf("Connection #%03d ", connid),
 				Color:       true,
 			}
 			fconn.Matcher = srv.packageMatcher
 
 			fconn.forward(srv)
-		}()
+		}(conn, srv.connid)
 	}
 }
 
@@ -271,6 +285,14 @@ func (srv *Server) RequestStats() *Stats {
 	}
 }
 
+func (srv *Server) getLoggerLevel() int {
+	logLevel := logger.LOG_LEVEL_INFO
+	if srv.Debug {
+		logLevel = logger.LOG_LEVEL_ALL
+	}
+	return logLevel
+}
+
 func (srv *Server) getRemoteAddr() ([]int, []*net.TCPAddr) {
 	srv.mu.RLock()
 	defer srv.mu.RUnlock()
@@ -355,7 +377,7 @@ func (srv *Server) packageMatcher(fconn *forwardConnection, inbound bool, b []by
 	switch method {
 	case "HTTP":
 		// Response
-		srv.countServed()
+		srv.onServe(fconn)
 	case "GET ":
 		// Reqeust
 		fallthrough
@@ -364,28 +386,19 @@ func (srv *Server) packageMatcher(fconn *forwardConnection, inbound bool, b []by
 	case "PUT ":
 		fallthrough
 	case "DELE":
-		srv.countRequested()
+		srv.onRequest(fconn)
 	}
 }
 
-func (srv *Server) countRequested() int32 {
+func (srv *Server) onRequest(fconn *forwardConnection) int32 {
 	requested := atomic.AddInt32(&srv.requested, 1)
 	srv.servingFeed.In() <- requested
-	srv.countServing(1, requested)
+	// fconn.markRequest("")
 	return requested
 }
 
-func (srv *Server) countServed() int32 {
+func (srv *Server) onServe(fconn *forwardConnection) int32 {
 	served := atomic.AddInt32(&srv.served, 1)
-	srv.countServing(-1, served)
+	// srv.servedFeed.In() <- fconn.markResponse("")
 	return served
-}
-
-func (srv *Server) countServing(diff int32, reference int32) int32 {
-	serving := atomic.AddInt32(&srv.serving, diff)
-	sumResponse := atomic.AddInt64(&srv.sumResponse, int64(-diff) * time.Since(srv.started).Nanoseconds())
-	if serving == 0 && diff < 0 && reference % 1000 == 0 { // reference: rate control
-		log.Printf("Mean server response time: %f", float64(sumResponse) / 1000000000.0 / float64(reference))
-	}
-	return serving
 }
