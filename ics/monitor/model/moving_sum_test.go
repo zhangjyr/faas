@@ -42,6 +42,36 @@ func TestSum(t *testing.T) {
 		t.Logf("wrong sum of 1-6 with window 5, want: %v, got: %v", 20, movingSum.Sum())
 		t.Fail()
 	}
+
+	movingSum.Add(7)
+	if movingSum.Sum() != 25 {
+		t.Logf("wrong sum of 1-7 with window 5, want: %v, got: %v", 25, movingSum.Sum())
+		t.Fail()
+	}
+
+	movingSum.Add(8)
+	if movingSum.Sum() != 30 {
+		t.Logf("wrong sum of 1-8 with window 5, want: %v, got: %v", 30, movingSum.Sum())
+		t.Fail()
+	}
+
+	movingSum.Add(9)
+	if movingSum.Sum() != 35 {
+		t.Logf("wrong sum of 1-9 with window 5, want: %v, got: %v", 35, movingSum.Sum())
+		t.Fail()
+	}
+
+	movingSum.Add(10)
+	if movingSum.Sum() != 40 {
+		t.Logf("wrong sum of 1-10 with window 5, want: %v, got: %v", 40, movingSum.Sum())
+		t.Fail()
+	}
+
+	movingSum.Add(11)
+	if movingSum.Sum() != 45 {
+		t.Logf("wrong sum of 1-11 with window 5, want: %v, got: %v", 45, movingSum.Sum())
+		t.Fail()
+	}
 }
 
 func TestLast(t *testing.T) {

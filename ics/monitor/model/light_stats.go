@@ -1,11 +1,9 @@
 package model
 
 import (
-	"math"
 	"sync"
 	"sync/atomic"
 	"time"
-	"log"
 )
 
 const SwapOnTimeout = 0
